@@ -1,0 +1,13 @@
+{
+  "name": "CUT Performance",
+  "short_name": "CUT",
+  "description": "Suivi de sèche, activité, nutrition et musculation hypertrophie.",
+  "lang": "fr",
+  "start_url": "/aujourdhui",
+  "display": "standalone",
+  "background_color": "#f4f7f8",
+  "theme_color": "#0e1b2a",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
