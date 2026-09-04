@@ -50,6 +50,47 @@ describe('moteur de calcul calorique', () => {
     expect(result.adjustedCalorieTarget).toBe(3_250)
   })
 
+  it('bascule un repos vers le profil épaules-bras sans convertir les séries en calories', () => {
+    const result = calculateDay({
+      date: '2026-08-27', plannedBaseCalories: 2_850, targetSteps: 18_000,
+      meals: [], activities: [],
+      strengthActivity: {
+        performed: true, plannedDayType: 'rest', dayType: 'shoulders-arms',
+        templateId: 'shoulders-arms', templateName: 'Épaules-bras', durationMin: 60,
+        exerciseCount: 6, workingSetCount: 16, source: 'manual',
+      },
+    }, state.profile, state.settings)
+    expect(result.scheduledBaseCalories).toBe(2_850)
+    expect(result.strengthTrainingBaseAdjustmentKcal).toBe(50)
+    expect(result.strengthTrainingStepsAdjustment).toBe(-1_000)
+    expect(result.plannedBaseCalories).toBe(2_900)
+    expect(result.targetSteps).toBe(17_000)
+    expect(result.adjustedCalorieTarget).toBe(2_900)
+  })
+
+  it('rebascule une séance planifiée mais non faite vers le profil repos', () => {
+    const result = calculateDay({
+      date: '2026-08-27', plannedBaseCalories: 3_200, targetSteps: 15_000,
+      meals: [], activities: [],
+      strengthActivity: { performed: false, plannedDayType: 'lower', dayType: 'rest', source: 'manual' },
+    }, state.profile, state.settings)
+    expect(result.strengthTrainingBaseAdjustmentKcal).toBe(-350)
+    expect(result.strengthTrainingStepsAdjustment).toBe(3_000)
+    expect(result.plannedBaseCalories).toBe(2_850)
+    expect(result.targetSteps).toBe(18_000)
+    expect(result.adjustedCalorieTarget).toBe(2_850)
+  })
+
+  it('préserve les ajustements manuels lorsqu’une séance imprévue est déclarée', () => {
+    const result = calculateDay({
+      date: '2026-08-27', plannedBaseCalories: 2_950, targetSteps: 20_000,
+      meals: [], activities: [],
+      strengthActivity: { performed: true, plannedDayType: 'rest', dayType: 'upper', source: 'manual' },
+    }, state.profile, state.settings)
+    expect(result.plannedBaseCalories).toBe(3_200)
+    expect(result.targetSteps).toBe(20_000)
+  })
+
   it('n’interprète pas les jours nutrition non renseignés comme zéro', () => {
     const margin = calculateWeeklyMargin([
       { date: '2026-08-24', totalSteps: 18_000, caloriesConsumed: 3_000, meals: [], activities: [] },

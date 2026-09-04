@@ -9,7 +9,7 @@ const captures = [
   { route: '/nutrition', name: '04_saisie_nutrition', width: 1487, height: 1058, ready: '.nutrition-main-grid' },
   { route: '/semaine', name: '05_bilan_hebdomadaire', width: 1487, height: 1058, ready: '.week-matrix-card' },
   { route: '/progression', name: '06_progression_ajustements', width: 1486, height: 1059, ready: '.weight-trajectory-card' },
-  { route: '/musculation', name: '07_journal_musculation', width: 1624, height: 969, ready: '.training-main-grid' },
+  { route: '/musculation', name: '07_journal_musculation', width: 1624, height: 969, ready: '.sessions-page' },
   { route: '/parametres', name: '08_parametres_calculs', width: 1487, height: 1058, ready: '.settings-reference-grid' },
 ]
 

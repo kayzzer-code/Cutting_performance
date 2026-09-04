@@ -8,6 +8,7 @@ import { formatDecimal, formatNumber } from '../domain/format'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
 import { ExplainedLabel } from '../components/HelpTooltip'
+import { dayLabels, templateForDate } from '../domain/training'
 
 export function TodayPage() {
   const { state } = useApp()
@@ -18,7 +19,18 @@ export function TodayPage() {
   const weeklyMargin = calculateWeeklyMargin(weekLogs, state.profile, state.settings)
   const consumed = log.caloriesConsumed ?? 0
   const remaining = calc.adjustedCalorieTarget - consumed
-  const template = state.templates.find((item) => item.id === state.schedule[selectedDate])
+  const template = templateForDate(state, selectedDate)
+  const actualStrengthTemplate = state.templates.find((candidate) => candidate.id === log.strengthActivity?.templateId)
+  const actualSessionLabel = log.strengthActivity
+    ? log.strengthActivity.performed
+      ? actualStrengthTemplate?.shortName ?? log.strengthActivity.templateName ?? dayLabels[log.strengthActivity.dayType]
+      : 'Repos'
+    : template?.shortName ?? 'Repos'
+  const sessionWasChanged = Boolean(log.strengthActivity && (
+    log.strengthActivity.performed !== (log.strengthActivity.plannedDayType !== 'rest')
+    || log.strengthActivity.dayType !== log.strengthActivity.plannedDayType
+    || Boolean(log.strengthActivity.templateId && log.strengthActivity.templateId !== template?.id)
+  ))
   const runs = log.activities.filter((activity) => activity.type === 'running')
   const runMinutes = runs.reduce((sum, activity) => sum + activity.durationMin, 0)
   const runDistance = runs.reduce((sum, activity) => sum + (activity.distanceKm ?? 0), 0)
@@ -44,7 +56,7 @@ export function TodayPage() {
           </Link>
 
           <div className="daily-summary-card reference-card">
-            <Link to={dateHref('/musculation')} className="daily-summary-item"><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance.` : 'Aucune séance de musculation n’est planifiée pour cette journée.'} placement="left">Séance :</ExplainedLabel><strong>{template?.shortName ?? 'Repos'}</strong></Link>
+            <Link to={dateHref(sessionWasChanged ? '/activites' : '/musculation')} className="daily-summary-item"><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={sessionWasChanged ? `Le planning prévoyait ${template?.shortName ?? dayLabels[log.strengthActivity!.plannedDayType]}, mais ${actualSessionLabel} a été déclaré comme réalité. Clique pour modifier cette déclaration.` : template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance.` : 'Aucune séance de musculation n’est planifiée pour cette journée.'} placement="left">Séance :</ExplainedLabel><strong>{actualSessionLabel}</strong></Link>
             <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><SportShoe /></span><ExplainedLabel help="Nombre de pas de marche et de déplacement, sans les pas estimés pendant la course afin d’éviter le double comptage.">Pas hors course :</ExplainedLabel><strong>{log.totalSteps === undefined ? 'Non renseigné' : formatNumber(calc.walkingSteps)}</strong></Link>
             <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong></Link>
             <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée de vélo enregistrée pour cette date. L’intensité choisie détermine l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${bikeMinutes} min` : 'Non renseigné'}</strong></Link>
@@ -52,7 +64,7 @@ export function TodayPage() {
         </section>
 
         <section className="equation-card reference-card" aria-label="Formule de la cible calorique">
-          <EquationPart label="Jour planifié" value={calc.plannedBaseCalories} help="Base calorique correspondant au type de journée planifié : Lower, Upper, Épaules-bras ou Repos. L’activité cible de ce jour est déjà comprise dans cette base." placement="left" />
+          <EquationPart label={calc.strengthTrainingBaseAdjustmentKcal ? 'Base selon séance réelle' : 'Jour planifié'} value={calc.plannedBaseCalories} help={calc.strengthTrainingBaseAdjustmentKcal ? `La base planifiée de ${formatNumber(calc.scheduledBaseCalories)} kcal a été ajustée de ${calc.strengthTrainingBaseAdjustmentKcal > 0 ? '+' : ''}${formatNumber(calc.strengthTrainingBaseAdjustmentKcal)} kcal selon la séance réellement déclarée.` : 'Base calorique correspondant au type de journée planifié : Lower, Upper, Épaules-bras ou Repos. L’activité cible de ce jour est déjà comprise dans cette base.'} placement="left" />
           <EquationOperator symbol="+" />
           <EquationPart label="Activité supplémentaire" value={calc.activityDeltaKcal} signed help="Différence entre la dépense d’activité réellement enregistrée et la dépense d’activité déjà prévue dans le plan." />
           <EquationOperator symbol="×" />

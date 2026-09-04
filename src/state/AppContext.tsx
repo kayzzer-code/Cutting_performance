@@ -1,66 +1,14 @@
-/* oxlint-disable react/only-export-components -- le hook et son provider partagent volontairement le même contexte */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
-import { isoDate } from '../domain/dates'
-import { createInitialState, defaultPlanForTemplate } from '../domain/seed'
-import type {
-  Activity,
-  AppState,
-  CalculationSettings,
-  DailyLog,
-  Profile,
-  SetLog,
-  TrainingSession,
-} from '../domain/types'
-
-const STORAGE_KEY = 'cutting-performance-app:v1'
-
-function loadState(): AppState {
-  const initial = createInitialState()
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as AppState
-      return {
-        ...initial,
-        ...parsed,
-        schedule: { ...initial.schedule, ...parsed.schedule },
-        profile: { ...initial.profile, ...parsed.profile },
-        settings: {
-          ...initial.settings,
-          ...parsed.settings,
-          dayTypePlans: { ...initial.settings.dayTypePlans, ...parsed.settings?.dayTypePlans },
-        },
-      }
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-  }
-  return initial
-}
-
-function createId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function ensureLog(state: AppState, date: string): DailyLog {
-  return state.logs[date] ?? {
-    date,
-    meals: [],
-    activities: [],
-    ...defaultPlanForTemplate(state.schedule[date] ?? 'rest', state.settings.dayTypePlans),
-  }
-}
+/* oxlint-disable react/only-export-components */
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createInitialState } from '../domain/seed'
+import { BACKUP_KEY, exportLocalData, loadStoredState, migrateState, STORAGE_KEY } from '../domain/storage'
+import { blankSet, changeSession, elapsed, previewSchedule, reconfigureState, startSession, trainingLog, uid } from '../domain/training'
+import type { Activity, AppState, CalculationSettings, DailyLog, Profile, SetLog } from '../domain/types'
 
 interface AppContextValue {
   state: AppState
+  storageStatus: string
+  transact: (update: (state: AppState) => AppState) => boolean
   updateProfile: (profile: Partial<Profile>) => void
   updateSettings: (settings: Partial<CalculationSettings>) => void
   applyConfiguration: (profile: Profile, settings: CalculationSettings) => void
@@ -79,251 +27,81 @@ interface AppContextValue {
   completeOnboarding: () => void
   resetApp: () => void
 }
-
 const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(loadState)
+  const [loaded] = useState(() => {
+    try { return { ...loadStoredState(localStorage), error: '' } }
+    catch (error) { return { state: null, raw: null, error: String(error) } }
+  })
+  const [state, renderState] = useState<AppState | null>(loaded.state)
+  const current = useRef(state)
+  const lastRaw = useRef(loaded.raw)
+  const unsaved = useRef(false)
+  const [storageStatus, setStorageStatus] = useState('Sauvegardé localement')
+  const [error, setError] = useState(loaded.error)
+  const [conflict, setConflict] = useState(false)
+  const transact = useCallback((update: (value: AppState) => AppState): boolean => {
+    if (!current.current || conflict) return false
+    try {
+      if (localStorage.getItem(STORAGE_KEY) !== lastRaw.current) { setConflict(true); setStorageStatus('Conflit entre onglets'); return false }
+      const next = update(current.current)
+      if (next === current.current && !unsaved.current) return true
+      const versioned = { ...next, revision: (current.current.revision ?? 0) + 1 }
+      current.current = versioned
+      renderState(versioned)
+      unsaved.current = true
+      const serialized = JSON.stringify(versioned)
+      localStorage.setItem(STORAGE_KEY, serialized)
+      lastRaw.current = serialized
+      unsaved.current = false
+      setStorageStatus('Sauvegardé localement'); setError('')
+      return true
+    } catch (cause) { setError(String(cause)); setStorageStatus(unsaved.current ? 'Échec de sauvegarde — données conservées en mémoire' : 'Action non enregistrée'); return false }
+  }, [conflict])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
-
-  const updateProfile = useCallback((patch: Partial<Profile>) => {
-    setState((current) => ({ ...current, profile: { ...current.profile, ...patch } }))
+    function changed(event: StorageEvent) {
+      if (event.key !== STORAGE_KEY || event.newValue === lastRaw.current) return
+      if (unsaved.current || !event.newValue) { setConflict(true); setStorageStatus('Conflit entre onglets'); return }
+      try {
+        const next = migrateState(JSON.parse(event.newValue))
+        current.current = next; lastRaw.current = event.newValue; renderState(next)
+        setStorageStatus('Mis à jour depuis un autre onglet')
+      } catch (cause) { setError(String(cause)); setConflict(true) }
+    }
+    function warn(event: BeforeUnloadEvent) { if (unsaved.current) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('storage', changed); window.addEventListener('beforeunload', warn)
+    return () => { window.removeEventListener('storage', changed); window.removeEventListener('beforeunload', warn) }
   }, [])
 
-  const updateSettings = useCallback((patch: Partial<CalculationSettings>) => {
-    setState((current) => ({ ...current, settings: { ...current.settings, ...patch } }))
-  }, [])
-
-  const applyConfiguration = useCallback((profile: Profile, settings: CalculationSettings) => {
-    const today = isoDate()
-    setState((current) => ({
-      ...current,
-      profile,
-      settings,
-      logs: Object.fromEntries(Object.entries(current.logs).map(([date, log]) => {
-        if (date < today) return [date, log]
-        const plan = defaultPlanForTemplate(current.schedule[date] ?? 'rest', settings.dayTypePlans)
-        return [date, { ...log, ...plan }]
-      })),
-    }))
-  }, [])
-
-  const updateLog = useCallback((date: string, patch: Partial<DailyLog>) => {
-    setState((current) => ({
-      ...current,
-      logs: {
-        ...current.logs,
-        [date]: { ...ensureLog(current, date), ...patch },
-      },
-    }))
-  }, [])
-
-  const addActivity = useCallback((date: string, activity: Omit<Activity, 'id' | 'date'>) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      return {
-        ...current,
-        logs: {
-          ...current.logs,
-          [date]: {
-            ...log,
-            activities: [...log.activities, { ...activity, id: createId('activity'), date }],
-          },
-        },
-      }
-    })
-  }, [])
-
-  const removeActivity = useCallback((date: string, id: string) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      return {
-        ...current,
-        logs: {
-          ...current.logs,
-          [date]: { ...log, activities: log.activities.filter((item) => item.id !== id) },
-        },
-      }
-    })
-  }, [])
-
-  const setCalories = useCallback((date: string, calories: number) => {
-    updateLog(date, { caloriesConsumed: calories })
-  }, [updateLog])
-
-  const addMeal = useCallback((date: string, name: string, calories: number) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      return {
-        ...current,
-        logs: {
-          ...current.logs,
-          [date]: {
-            ...log,
-            meals: [...log.meals, { id: createId('meal'), name, calories }],
-            caloriesConsumed: (log.caloriesConsumed ?? 0) + calories,
-          },
-        },
-      }
-    })
-  }, [])
-
-  const setWeight = useCallback((date: string, weight: number) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      const logs = { ...current.logs, [date]: { ...log, weightKg: weight } }
-      const latestWeight = Object.values(logs)
-        .filter((item) => item.weightKg !== undefined)
-        .sort((a, b) => b.date.localeCompare(a.date))[0]?.weightKg
-      return {
-        ...current,
-        profile: { ...current.profile, currentWeightKg: latestWeight ?? current.profile.currentWeightKg },
-        logs,
-      }
-    })
-  }, [])
-
-  const startTraining = useCallback((date: string, templateId: string) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      const template = current.templates.find((item) => item.id === templateId)
-      if (!template) return current
-      const training: TrainingSession = {
-        id: createId('training'),
-        date,
-        templateId,
-        name: template.name,
-        status: 'in-progress',
-        exercises: template.exercises.map((exercise) => ({
-          ...exercise,
-          sets: Array.from({ length: Number.parseInt(exercise.target, 10) || 3 }, () => ({
-            id: createId('set'),
-            reps: 12,
-            loadKg: 0,
-            rir: 2,
-            completed: false,
-          })),
-        })),
-      }
-      return {
-        ...current,
-        logs: { ...current.logs, [date]: { ...log, training } },
-      }
-    })
-  }, [])
-
-  const updateTrainingSet = useCallback((date: string, exerciseId: string, setId: string, patch: Partial<SetLog>) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      if (!log.training) return current
-      return {
-        ...current,
-        logs: {
-          ...current.logs,
-          [date]: {
-            ...log,
-            training: {
-              ...log.training,
-              exercises: log.training.exercises.map((exercise) =>
-                exercise.id === exerciseId
-                  ? { ...exercise, sets: exercise.sets.map((set) => set.id === setId ? { ...set, ...patch } : set) }
-                  : exercise,
-              ),
-            },
-          },
-        },
-      }
-    })
-  }, [])
-
-  const addTrainingSet = useCallback((date: string, exerciseId: string) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      if (!log.training) return current
-      return {
-        ...current,
-        logs: {
-          ...current.logs,
-          [date]: {
-            ...log,
-            training: {
-              ...log.training,
-              exercises: log.training.exercises.map((exercise) => exercise.id === exerciseId
-                ? { ...exercise, sets: [...exercise.sets, { id: createId('set'), reps: 12, loadKg: 0, rir: 2, completed: false }] }
-                : exercise),
-            },
-          },
-        },
-      }
-    })
-  }, [])
-
-  const completeTraining = useCallback((date: string) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      if (!log.training) return current
-      return {
-        ...current,
-        logs: { ...current.logs, [date]: { ...log, training: { ...log.training, status: 'completed' } } },
-      }
-    })
-  }, [])
-
-  const updateSchedule = useCallback((date: string, templateId: string) => {
-    setState((current) => {
-      const log = ensureLog(current, date)
-      return {
-        ...current,
-        schedule: { ...current.schedule, [date]: templateId },
-        logs: {
-          ...current.logs,
-          [date]: { ...log, ...defaultPlanForTemplate(templateId, current.settings.dayTypePlans) },
-        },
-      }
-    })
-  }, [])
-
-  const setWeeklyStrategy = useCallback((weeklyStrategy: AppState['weeklyStrategy']) => {
-    setState((current) => ({ ...current, weeklyStrategy }))
-  }, [])
-
-  const completeOnboarding = useCallback(() => {
-    setState((current) => ({ ...current, onboardingComplete: true }))
-  }, [])
-
-  const resetApp = useCallback(() => setState(createInitialState()), [])
-
-  const value = useMemo<AppContextValue>(() => ({
-    state,
-    updateProfile,
-    updateSettings,
-    applyConfiguration,
+  const updateLog = (date: string, patch: Partial<DailyLog>) => { transact(s => ({ ...s, logs: { ...s.logs, [date]: { ...trainingLog(s, date), ...patch } } })) }
+  if (!state) return <main className="storage-recovery"><h1>Ton journal est protégé</h1><p>Le stockage n’a pas pu être ouvert. Aucune donnée existante n’a été effacée.</p><pre>{error}</pre><button onClick={() => exportLocalData(localStorage.getItem(STORAGE_KEY) ?? '')}>Exporter les données brutes</button><button onClick={() => window.location.reload()}>Réessayer</button><p>Une sauvegarde antérieure peut être disponible sous la clé {BACKUP_KEY}.</p></main>
+  const value: AppContextValue = {
+    state, transact, storageStatus,
+    updateProfile: patch => { transact(s => ({ ...s, profile: { ...s.profile, ...patch } })) },
+    updateSettings: patch => { transact(s => ({ ...s, settings: { ...s.settings, ...patch } })) },
+    applyConfiguration: (profile, settings) => { transact(s => reconfigureState(s, profile, settings)) },
     updateLog,
-    addActivity,
-    removeActivity,
-    setCalories,
-    addMeal,
-    setWeight,
-    startTraining,
-    updateTrainingSet,
-    addTrainingSet,
-    completeTraining,
-    updateSchedule,
-    setWeeklyStrategy,
-    completeOnboarding,
-    resetApp,
-  }), [
-    state, updateProfile, updateSettings, applyConfiguration, updateLog, addActivity, removeActivity,
-    setCalories, addMeal, setWeight, startTraining, updateTrainingSet, addTrainingSet,
-    completeTraining, updateSchedule, setWeeklyStrategy, completeOnboarding, resetApp,
-  ])
-
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+    addActivity: (date, activity) => { transact(s => { const log = trainingLog(s, date); return { ...s, logs: { ...s.logs, [date]: { ...log, activities: [...log.activities, { ...activity, id: uid('activity'), date }] } } } }) },
+    removeActivity: (date, id) => { transact(s => { const log = trainingLog(s, date); return { ...s, logs: { ...s.logs, [date]: { ...log, activities: log.activities.filter(a => a.id !== id) } } } }) },
+    setCalories: (date, calories) => updateLog(date, { caloriesConsumed: calories }),
+    addMeal: (date, name, calories) => { transact(s => { const log = trainingLog(s, date); return { ...s, logs: { ...s.logs, [date]: { ...log, meals: [...log.meals, { id: uid('meal'), name, calories }], caloriesConsumed: (log.caloriesConsumed ?? 0) + calories } } } }) },
+    setWeight: (date, weightKg) => { transact(s => { const logs = { ...s.logs, [date]: { ...trainingLog(s, date), weightKg } }; const last = Object.values(logs).filter(l => l.weightKg !== undefined).sort((a, b) => b.date.localeCompare(a.date))[0]; return { ...s, logs, profile: { ...s.profile, currentWeightKg: last?.weightKg ?? s.profile.currentWeightKg } } }) },
+    startTraining: (date, templateId) => { transact(s => startSession(s, date, templateId)) },
+    updateTrainingSet: (date, exerciseId, setId, patch) => { transact(s => changeSession(s, date, session => ({ ...session, exercises: session.exercises.map(e => e.id === exerciseId ? { ...e, sets: e.sets.map(set => set.id === setId ? { ...set, ...patch } : set) } : e) }))) },
+    addTrainingSet: (date, exerciseId) => { transact(s => changeSession(s, date, session => ({ ...session, exercises: session.exercises.map(e => e.id === exerciseId ? { ...e, sets: [...e.sets, blankSet()] } : e) }))) },
+    completeTraining: date => { transact(s => changeSession(s, date, session => ({ ...session, status: 'completed', completedAt: Date.now(), elapsedMs: elapsed(session), runningSince: undefined, restUntil: undefined, restRemainingMs: undefined }))) },
+    updateSchedule: (date, templateId) => { transact(s => previewSchedule(s, { [date]: templateId })) },
+    setWeeklyStrategy: weeklyStrategy => { transact(s => ({ ...s, weeklyStrategy })) },
+    completeOnboarding: () => { transact(s => ({ ...s, onboardingComplete: true })) },
+    resetApp: () => { transact(() => migrateState(createInitialState())) },
+  }
+  return <AppContext.Provider value={value}>
+    {(error || conflict) && <div className="storage-alert" role="alert"><strong>{conflict ? 'Une autre version du journal existe. Sauvegarde bloquée pour éviter son écrasement.' : storageStatus}</strong><span>{error}</span><button onClick={() => exportLocalData(JSON.stringify(current.current))}>Exporter ma version</button>{!conflict && <button onClick={() => transact(s => s)}>Réessayer la sauvegarde</button>}<button onClick={() => window.location.reload()}>Recharger la version enregistrée</button></div>}
+    {children}
+  </AppContext.Provider>
 }
-
 export function useApp(): AppContextValue {
   const context = useContext(AppContext)
   if (!context) throw new Error('useApp doit être utilisé dans AppProvider')

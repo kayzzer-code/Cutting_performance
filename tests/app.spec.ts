@@ -34,6 +34,53 @@ test('une activité ajuste la cible, évite le double comptage et persiste', asy
   expect(targetAfter).not.toBe(targetBefore)
 })
 
+test('une séance imprévue adapte la journée sans modifier le planning', async ({ page }) => {
+  await page.goto('/activites')
+  const performed = page.getByLabel('Séance de musculation réalisée')
+  const target = page.locator('.summary-line').filter({ hasText: 'Nouvelle cible' }).locator('strong')
+
+  await expect(performed).toBeChecked()
+  await expect(target).toContainText('2 900')
+  await performed.uncheck()
+  await expect(target).toContainText('2 850')
+  await performed.check()
+  await expect(target).toContainText('2 900')
+
+  const currentDate = await page.getByLabel('Choisir la date du journal').inputValue()
+  const previousDate = new Date(`${currentDate}T12:00:00`)
+  previousDate.setDate(previousDate.getDate() - 1)
+  const restDate = previousDate.toISOString().slice(0, 10)
+  await page.goto(`/activites?date=${restDate}`)
+
+  await expect(performed).not.toBeChecked()
+  await expect(page.getByText('Prévu :', { exact: false }).first()).toContainText('Repos')
+  await performed.check()
+  await page.getByLabel('Séance réalisée', { exact: true }).selectOption('shoulders-arms')
+  await page.getByLabel('Durée de la séance').fill('60')
+  await page.getByLabel('Nombre d’exercices').fill('6')
+  await page.getByLabel('Nombre de séries de travail').fill('16')
+  await expect(page.locator('.summary-line').filter({ hasText: 'Ajustement séance' }).locator('strong')).toContainText('+50')
+  await expect(target).toContainText('2 900')
+  await page.getByRole('button', { name: 'Enregistrer les activités' }).click()
+  await page.reload()
+
+  await expect(performed).toBeChecked()
+  await expect(page.getByLabel('Séance réalisée', { exact: true })).toHaveValue('shoulders-arms')
+  await expect(page.getByLabel('Durée de la séance')).toHaveValue('60')
+  await expect(page.getByLabel('Nombre d’exercices')).toHaveValue('6')
+  await expect(page.getByLabel('Nombre de séries de travail')).toHaveValue('16')
+  const stored = await page.evaluate((date) => {
+    const state = JSON.parse(localStorage.getItem('cutting-performance-app:v1')!)
+    return { schedule: state.schedule[date], strength: state.logs[date].strengthActivity }
+  }, restDate)
+  expect(stored.schedule).toBe('rest')
+  expect(stored.strength).toMatchObject({ performed: true, plannedDayType: 'rest', dayType: 'shoulders-arms', durationMin: 60, exerciseCount: 6, workingSetCount: 16 })
+
+  await page.goto(`/aujourdhui?date=${restDate}`)
+  await expect(page.locator('.daily-summary-card')).toContainText('Épaules-bras')
+  await expect(page.locator('.equation-card')).toContainText('Base selon séance réelle')
+})
+
 test('la nutrition enregistrée alimente le bilan de la semaine', async ({ page }) => {
   await page.goto('/nutrition')
   await page.getByLabel('Calories consommées aujourd’hui').fill('2750')
@@ -85,19 +132,20 @@ test('le profil recalcule le plan et les coefficients techniques restent verroui
   await expect(page.getByLabel('Perte visée')).toHaveValue('1')
 })
 
-test('une séance peut être démarrée, terminée puis recommencée', async ({ page }) => {
+test('une séance peut être démarrée, terminée partiellement puis corrigée sans effacer son historique', async ({ page }) => {
   await page.goto('/musculation')
   await page.getByRole('button', { name: 'Démarrer la séance' }).click()
   await expect(page.getByText(/Séance démarrée/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Terminer la séance' })).toBeEnabled()
 
   await page.getByRole('button', { name: 'Terminer la séance' }).click()
+  await page.getByRole('button', { name: 'Terminer en l’état' }).click()
   await expect(page.getByText(/Séance terminée et enregistrée/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Séance terminée' })).toBeDisabled()
 
-  await page.getByRole('button', { name: 'Recommencer la séance' }).click()
-  await expect(page.getByText('Nouvelle séance démarrée.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Terminer la séance' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Corriger cette séance' }).click()
+  await page.getByRole('button', { name: 'Autoriser la correction de la séance' }).click()
+  await expect(page.getByRole('button', { name: 'Terminer la correction' })).toBeEnabled()
 })
 
 test('la remise à zéro efface le journal et relance le paramétrage', async ({ page }) => {

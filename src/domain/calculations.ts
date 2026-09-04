@@ -32,8 +32,22 @@ export function calculateDay(
   settings: CalculationSettings,
 ): DayCalculation {
   const weight = log.weightKg ?? profile.currentWeightKg
-  const plannedBaseCalories = log.plannedBaseCalories ?? settings.baseCalories
-  const targetSteps = log.targetSteps ?? settings.targetSteps
+  const scheduledBaseCalories = log.plannedBaseCalories ?? settings.baseCalories
+  const scheduledTargetSteps = log.targetSteps ?? settings.targetSteps
+  const strengthActivity = log.strengthActivity
+  const effectiveDayType = strengthActivity
+    ? strengthActivity.performed ? strengthActivity.dayType : 'rest'
+    : undefined
+  const plannedStrengthPlan = strengthActivity ? settings.dayTypePlans[strengthActivity.plannedDayType] : undefined
+  const actualStrengthPlan = effectiveDayType ? settings.dayTypePlans[effectiveDayType] : undefined
+  const strengthTrainingBaseAdjustmentKcal = plannedStrengthPlan && actualStrengthPlan
+    ? actualStrengthPlan.calories - plannedStrengthPlan.calories
+    : 0
+  const strengthTrainingStepsAdjustment = plannedStrengthPlan && actualStrengthPlan
+    ? actualStrengthPlan.steps - plannedStrengthPlan.steps
+    : 0
+  const plannedBaseCalories = scheduledBaseCalories + strengthTrainingBaseAdjustmentKcal
+  const targetSteps = Math.max(0, scheduledTargetSteps + strengthTrainingStepsAdjustment)
   const runningSteps = estimateRunningSteps(log, settings.runCadenceSpm)
   const hasStepData = log.totalSteps !== undefined
   const walkingSteps = Math.max(0, (log.totalSteps ?? targetSteps + runningSteps) - runningSteps)
@@ -75,8 +89,13 @@ export function calculateDay(
   )
 
   return {
+    scheduledBaseCalories,
+    scheduledTargetSteps,
     plannedBaseCalories,
     targetSteps,
+    strengthTrainingBaseAdjustmentKcal,
+    strengthTrainingStepsAdjustment,
+    effectiveDayType,
     runningSteps,
     walkingSteps,
     walkingKcal: Math.round(walkingKcal),

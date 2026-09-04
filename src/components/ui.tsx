@@ -44,7 +44,7 @@ export function SelectField({
   return (
     <label className="field">
       <span className="field-label">{label}</span>
-      <select {...props}>{children}</select>
+      <select aria-label={label} {...props}>{children}</select>
     </label>
   )
 }

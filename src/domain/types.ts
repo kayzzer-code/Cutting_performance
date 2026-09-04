@@ -24,17 +24,42 @@ export interface Meal {
 
 export interface SetLog {
   id: string
-  reps: number
-  loadKg: number
-  rir: number
+  reps?: number
+  loadKg?: number
+  rir?: number
   completed: boolean
+  kind?: 'work' | 'warmup'
 }
 
-export interface ExerciseLog {
+export type DayType = 'upper' | 'lower' | 'shoulders-arms' | 'rest'
+export type LoadConvention = 'total' | 'per-dumbbell' | 'machine' | 'bodyweight' | 'assisted' | 'unknown'
+export interface ExerciseDefinition {
   id: string
+  name: string
+  equipmentId: string
+  convention: LoadConvention
+  muscleGroup?: string
+  archived?: boolean
+}
+export interface TemplateExercise {
+  id: string
+  exerciseId?: string
   name: string
   target: string
   note?: string
+  equipmentId?: string
+  convention?: LoadConvention
+  setCount?: number
+  repsMin?: number
+  repsMax?: number
+  targetRir?: number
+  restSeconds?: number
+}
+
+export interface ExerciseLog extends TemplateExercise {
+  templateLineId?: string
+  replacesId?: string
+  replacedById?: string
   sets: SetLog[]
 }
 
@@ -45,6 +70,26 @@ export interface TrainingSession {
   name: string
   status: 'planned' | 'in-progress' | 'completed'
   exercises: ExerciseLog[]
+  templateVersion?: number
+  startedAt?: number
+  completedAt?: number
+  runningSince?: number
+  elapsedMs?: number
+  restUntil?: number
+  restRemainingMs?: number
+  autoRest?: boolean
+}
+
+export interface StrengthActivity {
+  performed: boolean
+  plannedDayType: DayType
+  dayType: DayType
+  templateId?: string
+  templateName?: string
+  durationMin?: number
+  exerciseCount?: number
+  workingSetCount?: number
+  source: 'manual' | 'journal'
 }
 
 export interface DailyLog {
@@ -57,6 +102,7 @@ export interface DailyLog {
   activities: Activity[]
   weightKg?: number
   training?: TrainingSession
+  strengthActivity?: StrengthActivity
 }
 
 export interface Profile {
@@ -89,12 +135,22 @@ export interface TrainingTemplate {
   id: string
   name: string
   shortName: string
-  exercises: Array<{
-    id: string
-    name: string
-    target: string
-    note?: string
-  }>
+  exercises: TemplateExercise[]
+  description?: string
+  dayType?: Exclude<DayType, 'rest'>
+  version?: number
+  createdAt?: string
+  updatedAt?: string
+  archived?: boolean
+}
+
+export interface PlannedSession {
+  date: string
+  templateId: string
+  dayType: DayType
+  template?: TrainingTemplate
+  typeBaseCalories: number
+  typeTargetSteps: number
 }
 
 export interface AppState {
@@ -106,11 +162,19 @@ export interface AppState {
   templates: TrainingTemplate[]
   schedule: Record<string, string>
   weeklyStrategy: 'flexible' | 'even' | 'free-meal'
+  catalogue?: ExerciseDefinition[]
+  plannedSessions?: Record<string, PlannedSession>
+  revision?: number
 }
 
 export interface DayCalculation {
+  scheduledBaseCalories: number
+  scheduledTargetSteps: number
   plannedBaseCalories: number
   targetSteps: number
+  strengthTrainingBaseAdjustmentKcal: number
+  strengthTrainingStepsAdjustment: number
+  effectiveDayType?: DayType
   runningSteps: number
   walkingSteps: number
   walkingKcal: number

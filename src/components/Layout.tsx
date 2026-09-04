@@ -13,12 +13,12 @@ const navItems = [
   { to: '/nutrition', label: 'Nutrition', icon: Utensils },
   { to: '/semaine', label: 'Semaine', icon: CalendarDays },
   { to: '/progression', label: 'Progression', icon: TrendingUp },
-  { to: '/musculation', label: 'Musculation', icon: Dumbbell },
+  { to: '/seances', label: 'Séances', icon: Dumbbell },
   { to: '/parametres', label: 'Paramètres', icon: Settings },
 ]
 
-const mobilePrimary = navItems.slice(0, 4)
-const mobileMore = navItems.slice(4)
+const mobilePrimary = [navItems[0], navItems[1], navItems[2], navItems[5]]
+const mobileMore = [navItems[3], navItems[4], navItems[6]]
 
 export function AppLayout() {
   const { state } = useApp()
@@ -29,7 +29,12 @@ export function AppLayout() {
   const selectedDate = isIsoDate(requestedDate) && requestedDate <= currentDate ? requestedDate : currentDate
   const journalContext = useMemo<JournalDateContext>(() => ({
     selectedDate,
-    dateHref: (path) => selectedDate === currentDate ? path : `${path}?date=${selectedDate}`,
+    dateHref: (path) => {
+      const [pathname, query] = path.split('?')
+      const params = new URLSearchParams(query)
+      if (selectedDate !== currentDate) params.set('date', selectedDate)
+      return `${pathname}${params.size ? `?${params}` : ''}`
+    },
   }), [currentDate, selectedDate])
 
   function selectDate(date: string) {

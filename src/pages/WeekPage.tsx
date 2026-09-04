@@ -39,7 +39,7 @@ export function WeekPage() {
 
   function applyAllocation() {
     if (!window.confirm(`Ajouter ${allocation >= 0 ? '+' : ''}${allocation} kcal aux ${remainingDays} jours restants ?`)) return
-    rows.filter((row) => row.date > selectedDate).forEach((row) => updateLog(row.date, { plannedBaseCalories: row.calc.plannedBaseCalories + allocation }))
+    rows.filter((row) => row.date > selectedDate).forEach((row) => updateLog(row.date, { plannedBaseCalories: row.calc.scheduledBaseCalories + allocation }))
     setAllocationApplied(true)
   }
 

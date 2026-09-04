@@ -1,0 +1,122 @@
+import { createInitialState } from './seed'
+import { isIsoDate } from './dates'
+import { clone, planFor } from './training'
+import type { AppState, ExerciseDefinition, TemplateExercise } from './types'
+
+export const STORAGE_KEY = 'cutting-performance-app:v1'
+export const BACKUP_KEY = `${STORAGE_KEY}:backup-before-v3`
+const legacyTypes = { 'upper-a': 'upper', 'upper-b': 'upper', 'lower-a': 'lower', 'lower-b': 'lower', 'shoulders-arms': 'shoulders-arms' } as const
+const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`Données locales invalides : ${message}`) }
+
+export function migrateState(input: unknown): AppState {
+  assert(record(input), 'état absent')
+  assert([1, 2, 3].includes(Number(input.schemaVersion)), 'version non prise en charge')
+  assert(record(input.logs) && record(input.schedule) && record(input.profile) && record(input.settings) && Array.isArray(input.templates), 'structure du journal')
+  for (const template of input.templates) {
+    assert(record(template) && typeof template.id === 'string' && typeof template.name === 'string' && Array.isArray(template.exercises), 'modèle de séance')
+    for (const e of template.exercises) assert(record(e) && typeof e.id === 'string' && typeof e.name === 'string' && typeof e.target === 'string', 'exercice de modèle')
+  }
+  for (const [date, log] of Object.entries(input.logs)) {
+    assert(isIsoDate(date) && record(log) && log.date === date && Array.isArray(log.activities) && Array.isArray(log.meals), 'journée')
+    for (const activity of log.activities) {
+      assert(record(activity) && typeof activity.id === 'string' && ['running', 'cycling', 'jump-rope', 'rowing', 'elliptical', 'other'].includes(String(activity.type)), 'activité')
+      assert(typeof activity.durationMin === 'number' && Number.isFinite(activity.durationMin) && activity.durationMin >= 0, 'durée d’activité')
+      for (const field of ['distanceKm', 'met']) assert(activity[field] === undefined || typeof activity[field] === 'number' && Number.isFinite(activity[field]), `activité ${field}`)
+    }
+    for (const meal of log.meals) assert(record(meal) && typeof meal.id === 'string' && typeof meal.name === 'string' && typeof meal.calories === 'number' && Number.isFinite(meal.calories), 'repas')
+    for (const field of ['plannedBaseCalories', 'targetSteps', 'totalSteps', 'caloriesConsumed', 'weightKg']) assert(log[field] === undefined || typeof log[field] === 'number' && Number.isFinite(log[field]), field)
+    if (log.strengthActivity) {
+      assert(record(log.strengthActivity) && typeof log.strengthActivity.performed === 'boolean', 'séance de musculation déclarée')
+      assert(['lower', 'upper', 'shoulders-arms', 'rest'].includes(String(log.strengthActivity.plannedDayType)), 'type de séance planifiée')
+      assert(['lower', 'upper', 'shoulders-arms', 'rest'].includes(String(log.strengthActivity.dayType)), 'type de séance réalisée')
+      assert(['manual', 'journal'].includes(String(log.strengthActivity.source)), 'source de séance réalisée')
+      for (const field of ['durationMin', 'exerciseCount', 'workingSetCount']) assert(log.strengthActivity[field] === undefined || typeof log.strengthActivity[field] === 'number' && Number.isFinite(log.strengthActivity[field]) && log.strengthActivity[field] >= 0, `séance ${field}`)
+      for (const field of ['templateId', 'templateName']) assert(log.strengthActivity[field] === undefined || typeof log.strengthActivity[field] === 'string', `séance ${field}`)
+    }
+    if (log.training) {
+      assert(record(log.training) && Array.isArray(log.training.exercises) && ['planned', 'in-progress', 'completed'].includes(String(log.training.status)), 'séance historique')
+      assert(typeof log.training.id === 'string' && typeof log.training.name === 'string' && typeof log.training.templateId === 'string', 'identité de séance')
+      for (const key of ['startedAt', 'completedAt', 'runningSince', 'elapsedMs', 'restUntil', 'restRemainingMs']) assert(log.training[key] === undefined || typeof log.training[key] === 'number' && Number.isFinite(log.training[key]), `horodatage ${key}`)
+      for (const e of log.training.exercises) {
+        assert(record(e) && typeof e.id === 'string' && typeof e.name === 'string' && Array.isArray(e.sets), 'exercice historique')
+        for (const s of e.sets) {
+          assert(record(s) && typeof s.id === 'string' && typeof s.completed === 'boolean', 'série historique')
+          for (const key of ['loadKg', 'reps', 'rir']) assert(s[key] === undefined || typeof s[key] === 'number' && Number.isFinite(s[key]), `série ${key}`)
+        }
+      }
+    }
+  }
+  for (const [date, id] of Object.entries(input.schedule)) assert(isIsoDate(date) && typeof id === 'string', 'planning')
+  const initial = createInitialState()
+  const state = clone(input) as unknown as AppState
+  state.profile = { ...initial.profile, ...state.profile }
+  state.settings = { ...initial.settings, ...state.settings, dayTypePlans: { ...initial.settings.dayTypePlans, ...state.settings.dayTypePlans } }
+  for (const value of Object.values(state.profile)) assert(typeof value !== 'number' || Number.isFinite(value), 'profil')
+  for (const plan of Object.values(state.settings.dayTypePlans)) assert(record(plan) && typeof plan.calories === 'number' && Number.isFinite(plan.calories) && typeof plan.steps === 'number' && Number.isFinite(plan.steps), 'plan calorique')
+  if (state.schemaVersion === 3) {
+    assert(Array.isArray(state.catalogue) && record(state.plannedSessions), 'catalogue ou occurrences')
+    for (const t of state.templates) {
+      assert(['upper', 'lower', 'shoulders-arms'].includes(t.dayType ?? ''), 'type de journée')
+      for (const e of t.exercises) {
+        assert(typeof e.exerciseId === 'string' && typeof e.equipmentId === 'string', 'référence d’exercice')
+        for (const field of ['setCount', 'repsMin', 'repsMax', 'targetRir', 'restSeconds'] as const) assert(e[field] === undefined || typeof e[field] === 'number' && Number.isFinite(e[field]), `prescription ${field}`)
+      }
+      assert(new Set(t.exercises.map(e => e.id)).size === t.exercises.length, 'identifiant de ligne dupliqué')
+    }
+    for (const e of state.catalogue) assert(record(e) && typeof e.id === 'string' && typeof e.name === 'string' && typeof e.equipmentId === 'string' && ['total', 'per-dumbbell', 'machine', 'bodyweight', 'assisted', 'unknown'].includes(e.convention), 'catalogue')
+    assert(new Set(state.templates.map(t => t.id)).size === state.templates.length, 'identifiant de modèle dupliqué')
+    assert(new Set(state.catalogue.map(e => e.id)).size === state.catalogue.length, 'identifiant de catalogue dupliqué')
+    for (const [date, p] of Object.entries(state.plannedSessions)) {
+      assert(isIsoDate(date) && record(p) && p.date === date && typeof p.templateId === 'string' && ['lower', 'upper', 'shoulders-arms', 'rest'].includes(p.dayType), 'occurrence planifiée')
+      assert(Number.isFinite(p.typeBaseCalories) && Number.isFinite(p.typeTargetSteps), 'base de planning')
+      if (p.template) assert(typeof p.template.name === 'string' && Array.isArray(p.template.exercises) && p.template.exercises.every(e => typeof e.id === 'string' && typeof e.name === 'string'), 'copie du modèle planifié')
+    }
+    return state
+  }
+  const catalogue: ExerciseDefinition[] = []
+  function upgradeLine(e: TemplateExercise, templateId: string, index: number): TemplateExercise {
+    // Exact legacy IDs, not names, keep variants independent. Unknown prescriptions stay intact.
+    const exerciseId = e.exerciseId ?? e.id
+    if (!catalogue.some(d => d.id === exerciseId)) catalogue.push({ id: exerciseId, name: e.name, equipmentId: e.equipmentId ?? 'legacy-unspecified', convention: e.convention ?? 'unknown' })
+    const parsed = e.target.match(/^\s*(\d+)\s*[×x]\s*(\d+)(?:\s*[–—-]\s*(\d+))?/)
+    return { ...e, id: `line:${templateId}:${index}:${e.id}`, exerciseId, equipmentId: e.equipmentId ?? 'legacy-unspecified', convention: e.convention ?? 'unknown', setCount: parsed ? Number(parsed[1]) : undefined, repsMin: parsed ? Number(parsed[2]) : undefined, repsMax: parsed ? Number(parsed[3] ?? parsed[2]) : undefined }
+  }
+  state.templates = state.templates.map(t => ({ ...t, dayType: t.dayType ?? legacyTypes[t.id as keyof typeof legacyTypes] ?? 'upper', version: t.version ?? 1, exercises: t.exercises.map((e, i) => upgradeLine(e, t.id, i)) }))
+  for (const log of Object.values(state.logs)) if (log.training) {
+    const t = state.templates.find(t => t.id === log.training!.templateId)
+    log.training.exercises = log.training.exercises.map((e, i) => {
+      const upgraded = upgradeLine(e, log.training!.templateId, i)
+      return { ...upgraded, id: e.id, templateLineId: t?.exercises.find(l => l.exerciseId === upgraded.exerciseId)?.id, sets: e.sets.map(s => ({ ...s, kind: s.kind ?? 'work' })) }
+    })
+  }
+  state.catalogue = catalogue
+  state.plannedSessions = Object.fromEntries(Object.entries(state.schedule).map(([date, templateId]) => {
+    const plan = planFor(state, templateId)
+    const template = state.templates.find(t => t.id === templateId)
+    return [date, { date, templateId, dayType: plan.dayType, template: template ? clone(template) : undefined, typeBaseCalories: plan.plannedBaseCalories, typeTargetSteps: plan.targetSteps }]
+  }))
+  state.schemaVersion = 3
+  state.revision = state.revision ?? 0
+  return state
+}
+
+export function loadStoredState(storage: Pick<Storage, 'getItem' | 'setItem'>): { state: AppState; raw: string | null } {
+  const raw = storage.getItem(STORAGE_KEY)
+  const parsed = raw ? JSON.parse(raw) : createInitialState()
+  if (raw && parsed.schemaVersion !== 3 && !storage.getItem(BACKUP_KEY)) storage.setItem(BACKUP_KEY, raw)
+  const state = migrateState(parsed)
+  if (raw && parsed.schemaVersion !== 3) {
+    // Backup must succeed BEFORE replacing the original; a quota error leaves it untouched.
+    storage.setItem(STORAGE_KEY, JSON.stringify(state))
+    return { state, raw: JSON.stringify(state) }
+  }
+  if (!raw) { storage.setItem(STORAGE_KEY, JSON.stringify(state)); return { state, raw: JSON.stringify(state) } }
+  return { state, raw }
+}
+
+export function exportLocalData(value: string, filename = 'cutting-performance-sauvegarde.json') {
+  const url = URL.createObjectURL(new Blob([value], { type: 'application/json' }))
+  const link = document.createElement('a'); link.href = url; link.download = filename; link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

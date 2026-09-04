@@ -1,13 +1,14 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Bike, Cable, CircleEllipsis, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
+import { Bike, Cable, CircleEllipsis, Dumbbell, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
 import { calculateDay, estimateRunningSteps } from '../domain/calculations'
 import { formatLongDate } from '../domain/dates'
-import type { Activity, ActivityType, DailyLog } from '../domain/types'
+import type { Activity, ActivityType, DailyLog, StrengthActivity } from '../domain/types'
 import { useApp } from '../state/AppContext'
 import { formatDecimal, formatNumber } from '../domain/format'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
 import { ExplainedLabel } from '../components/HelpTooltip'
+import { dayLabels, elapsed, templateForDate, typeOfTemplate } from '../domain/training'
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
@@ -16,8 +17,25 @@ export function ActivitiesPage() {
   const { selectedDate } = useJournalDate()
   const log = useMemo<DailyLog>(() => journalLogForDate(state, selectedDate), [selectedDate, state])
   const savedCalc = calculateDay(log, state.profile, state.settings)
+  const plannedTemplate = templateForDate(state, selectedDate)
+  const plannedDayType = state.plannedSessions?.[selectedDate]?.dayType ?? typeOfTemplate(plannedTemplate)
+  const journalSession = log.training
+  const initialTemplateId = journalSession?.templateId
+    ?? log.strengthActivity?.templateId
+    ?? (plannedDayType !== 'rest' ? plannedTemplate?.id : undefined)
+    ?? state.templates.find((template) => !template.archived && template.dayType === 'shoulders-arms')?.id
+    ?? state.templates.find((template) => !template.archived)?.id
+    ?? ''
+  const journalExerciseCount = journalSession?.exercises.filter((exercise) => !exercise.replacedById).length
+  const journalWorkingSetCount = journalSession?.exercises.reduce((sum, exercise) => sum + exercise.sets.filter((set) => set.completed && set.kind !== 'warmup').length, 0)
+  const journalDurationMin = journalSession ? Math.round(elapsed(journalSession) / 60_000) : undefined
   const existingRun = log.activities.find((activity) => activity.type === 'running')
   const existingBike = log.activities.find((activity) => activity.type === 'cycling')
+  const [strengthPerformed, setStrengthPerformed] = useState(log.strengthActivity?.performed ?? Boolean(journalSession || plannedDayType !== 'rest'))
+  const [strengthTemplateId, setStrengthTemplateId] = useState(initialTemplateId)
+  const [strengthDuration, setStrengthDuration] = useState<number | null>(journalDurationMin ?? log.strengthActivity?.durationMin ?? null)
+  const [strengthExercises, setStrengthExercises] = useState<number | null>(journalExerciseCount ?? log.strengthActivity?.exerciseCount ?? null)
+  const [strengthSets, setStrengthSets] = useState<number | null>(journalWorkingSetCount ?? log.strengthActivity?.workingSetCount ?? null)
   const [walkingSteps, setWalkingSteps] = useState<number | null>(log.totalSteps === undefined ? null : savedCalc.walkingSteps)
   const [runMinutes, setRunMinutes] = useState(existingRun?.durationMin ?? 0)
   const [runDistance, setRunDistance] = useState(existingRun?.distanceKm ?? 0)
@@ -29,6 +47,30 @@ export function ActivitiesPage() {
   const [saved, setSaved] = useState(false)
   const pace = runDistance > 0 ? runMinutes / runDistance : 0
   const bikeMet = bikeIntensity === 'easy' ? 4 : bikeIntensity === 'hard' ? 9 : 6.8
+  const strengthTemplate = state.templates.find((template) => template.id === strengthTemplateId)
+  const strengthActivity = useMemo<StrengthActivity>(() => journalSession
+    ? {
+        performed: true,
+        plannedDayType,
+        dayType: typeOfTemplate(strengthTemplate) === 'rest' ? log.strengthActivity?.dayType ?? plannedDayType : typeOfTemplate(strengthTemplate),
+        templateId: journalSession.templateId,
+        templateName: journalSession.name,
+        durationMin: journalDurationMin,
+        exerciseCount: journalExerciseCount,
+        workingSetCount: journalWorkingSetCount,
+        source: 'journal',
+      }
+    : {
+        performed: strengthPerformed,
+        plannedDayType,
+        dayType: strengthPerformed ? typeOfTemplate(strengthTemplate) : 'rest',
+        templateId: strengthPerformed && strengthTemplate ? strengthTemplate.id : undefined,
+        templateName: strengthPerformed && strengthTemplate ? strengthTemplate.name : undefined,
+        durationMin: strengthPerformed ? optionalPositive(strengthDuration) : undefined,
+        exerciseCount: strengthPerformed ? optionalPositive(strengthExercises) : undefined,
+        workingSetCount: strengthPerformed ? optionalPositive(strengthSets) : undefined,
+        source: 'manual',
+      }, [journalDurationMin, journalExerciseCount, journalSession, journalWorkingSetCount, log.strengthActivity?.dayType, plannedDayType, strengthDuration, strengthExercises, strengthPerformed, strengthSets, strengthTemplate])
 
   const previewLog = useMemo<DailyLog>(() => {
     const replaced = log.activities.filter((activity) => !['running', 'cycling'].includes(activity.type))
@@ -36,16 +78,16 @@ export function ActivitiesPage() {
     if (runMinutes > 0 && runDistance > 0) activities.push({ id: 'preview-run', date: selectedDate, type: 'running', durationMin: runMinutes, distanceKm: runDistance })
     if (bikeMinutes > 0) activities.push({ id: 'preview-bike', date: selectedDate, type: 'cycling', durationMin: bikeMinutes, met: bikeMet })
     if (extraMinutes > 0) activities.push({ id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraMinutes, met: extraType === 'jump-rope' ? 11.8 : 5 })
-    const shell = { ...log, activities, totalSteps: 0 }
+    const shell = { ...log, activities, strengthActivity, totalSteps: 0 }
     const runningSteps = estimateRunningSteps(shell, state.settings.runCadenceSpm)
     return { ...shell, totalSteps: walkingSteps === null ? undefined : walkingSteps + runningSteps }
-  }, [bikeMet, bikeMinutes, extraMinutes, extraType, log, runDistance, runMinutes, selectedDate, state.settings.runCadenceSpm, walkingSteps])
+  }, [bikeMet, bikeMinutes, extraMinutes, extraType, log, runDistance, runMinutes, selectedDate, state.settings.runCadenceSpm, strengthActivity, walkingSteps])
   const preview = calculateDay(previewLog, state.profile, state.settings)
 
   function saveActivities(event: FormEvent) {
     event.preventDefault()
     const activities = previewLog.activities.map((activity) => ({ ...activity, id: activity.id.startsWith('preview-') ? makeId(activity.type) : activity.id }))
-    updateLog(selectedDate, { totalSteps: previewLog.totalSteps, activities })
+    updateLog(selectedDate, { totalSteps: previewLog.totalSteps, activities, strengthActivity })
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
   }
@@ -60,6 +102,37 @@ export function ActivitiesPage() {
       <form className="reference-body activities-layout-reference" onSubmit={saveActivities}>
         <div className="activity-form-column">
           {saved && <div className="save-toast">Activités enregistrées et cible recalculée.</div>}
+          <section className="activity-entry-card reference-card strength-entry-card">
+            <span className="entry-icon navy"><Dumbbell /></span>
+            <div className="entry-content">
+              <div className="strength-entry-heading">
+                <h2><ExplainedLabel help="Indique si une séance de musculation a réellement été faite, même lorsque le planning prévoyait du repos. La cible est alors adaptée au type de séance réalisé." placement="left">Séance de musculation</ExplainedLabel></h2>
+                <label className="strength-toggle">
+                  <input
+                    aria-label="Séance de musculation réalisée"
+                    type="checkbox"
+                    checked={journalSession ? true : strengthPerformed}
+                    disabled={Boolean(journalSession)}
+                    onChange={(event) => setStrengthPerformed(event.target.checked)}
+                  />
+                  <span aria-hidden="true" />
+                  <b>{journalSession || strengthPerformed ? 'Réalisée' : 'Non réalisée'}</b>
+                </label>
+              </div>
+              <div className="strength-planning-status">
+                <span>Prévu : <strong>{plannedTemplate?.shortName ?? dayLabels[plannedDayType]}</strong></span>
+                <span>Réel : <strong>{journalSession || strengthPerformed ? strengthTemplate?.shortName ?? journalSession?.name ?? 'Séance à choisir' : 'Repos'}</strong></span>
+              </div>
+              {(journalSession || strengthPerformed) && <div className="strength-fields">
+                <label><ExplainedLabel help="Choisis le modèle qui correspond à la séance réellement effectuée. Le planning d’origine n’est pas modifié." placement="left">Séance réalisée</ExplainedLabel><select aria-label="Séance réalisée" required value={strengthTemplateId} disabled={Boolean(journalSession)} onChange={(event) => setStrengthTemplateId(event.target.value)}>{state.templates.filter((template) => !template.archived || template.id === strengthTemplateId).map((template) => <option key={template.id} value={template.id}>{template.shortName}</option>)}</select></label>
+                <label><ExplainedLabel help="Durée réelle de la séance, conservée pour ton historique. Elle n’est pas convertie directement en calories.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée de la séance" type="number" inputMode="numeric" min="0" max="360" placeholder="—" value={strengthDuration ?? ''} disabled={Boolean(journalSession)} onChange={(event) => setStrengthDuration(nullableNumber(event.target.value))} /><small>min</small></span></label>
+                <label><ExplainedLabel help="Nombre d’exercices réellement effectués pendant cette séance.">Exercices</ExplainedLabel><span className="unit-input"><input aria-label="Nombre d’exercices" type="number" inputMode="numeric" min="0" max="50" placeholder="—" value={strengthExercises ?? ''} disabled={Boolean(journalSession)} onChange={(event) => setStrengthExercises(nullableNumber(event.target.value))} /><small>ex.</small></span></label>
+                <label><ExplainedLabel help="Nombre total de séries de travail réalisées, hors échauffement.">Séries de travail</ExplainedLabel><span className="unit-input"><input aria-label="Nombre de séries de travail" type="number" inputMode="numeric" min="0" max="200" placeholder="—" value={strengthSets ?? ''} disabled={Boolean(journalSession)} onChange={(event) => setStrengthSets(nullableNumber(event.target.value))} /><small>séries</small></span></label>
+              </div>}
+              {journalSession && <p className="strength-source-note"><Info /> Cette séance est déjà reliée au journal de musculation. Ses données sont reprises automatiquement et ne sont comptées qu’une fois.</p>}
+              <p className="strength-calculation-note">Le type de journée calorique est ajusté selon la séance réelle. Durée, exercices et séries restent des données de suivi : aucun tonnage n’est transformé arbitrairement en calories.</p>
+            </div>
+          </section>
           <section className="activity-entry-card reference-card compact-entry">
             <span className="entry-icon teal"><SportShoe /></span>
             <div className="entry-content"><h2><ExplainedLabel help="Renseigne uniquement les pas de marche et de déplacement. Les pas produits pendant une course sont estimés séparément." placement="left">Marche et déplacements</ExplainedLabel></h2><label><ExplainedLabel help="Ces pas sont valorisés avec le coefficient de marche intégré et comparés à l’objectif de pas du jour." placement="left">Pas hors course</ExplainedLabel><span className="unit-input"><input aria-label="Pas hors course" placeholder="À renseigner" type="number" inputMode="numeric" min="0" step="100" value={walkingSteps ?? ''} onChange={(event) => setWalkingSteps(event.target.value === '' ? null : Number(event.target.value))} /><small>pas</small></span></label></div>
@@ -91,6 +164,7 @@ export function ActivitiesPage() {
         </div>
 
         <aside className="activity-live-summary reference-card">
+          <SummaryLine label="Ajustement séance" value={preview.strengthTrainingBaseAdjustmentKcal} signed help={`Écart entre le profil ${dayLabels[plannedDayType]} prévu et le profil ${dayLabels[preview.effectiveDayType ?? plannedDayType]} réellement déclaré. L’objectif de pas passe de ${formatNumber(preview.scheduledTargetSteps)} à ${formatNumber(preview.targetSteps)}.`} placement="left" />
           <SummaryLine label="Dépense activité prévue" value={preview.plannedActivityKcal} help="Dépense déjà intégrée à la cible du jour à partir du nombre de pas planifié." placement="left" />
           <SummaryLine label="Dépense activité réelle" value={preview.actualActivityKcal} help="Somme estimée de la marche, de la course, du vélo et des autres cardios renseignés." placement="left" />
           <SummaryLine label="Excédent d’activité" value={preview.activityDeltaKcal} signed help="Différence entre activité réelle et activité prévue. Une valeur positive signifie que tu as davantage dépensé que prévu." placement="left" />
@@ -111,4 +185,12 @@ function formatPace(value: number): string {
   const minutes = Math.floor(value)
   const seconds = Math.round((value - minutes) * 60)
   return `${minutes}:${String(seconds).padStart(2, '0')} / km`
+}
+
+function nullableNumber(value: string): number | null {
+  return value === '' ? null : Number(value)
+}
+
+function optionalPositive(value: number | null): number | undefined {
+  return value !== null && value > 0 ? value : undefined
 }
