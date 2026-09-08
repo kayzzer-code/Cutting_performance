@@ -36,6 +36,10 @@ export function TodayPage() {
   const runDistance = runs.reduce((sum, activity) => sum + (activity.distanceKm ?? 0), 0)
   const bikes = log.activities.filter((activity) => activity.type === 'cycling')
   const bikeMinutes = bikes.reduce((sum, activity) => sum + activity.durationMin, 0)
+  const bikePowerMinutes = bikes.reduce((sum, activity) => sum + (activity.averageWatts ? activity.durationMin : 0), 0)
+  const bikeAverageWatts = bikePowerMinutes > 0
+    ? Math.round(bikes.reduce((sum, activity) => sum + (activity.averageWatts ?? 0) * activity.durationMin, 0) / bikePowerMinutes)
+    : undefined
   const nutritionPercent = Math.min(100, calc.adjustedCalorieTarget ? consumed / calc.adjustedCalorieTarget * 100 : 0)
   const marginPosition = Math.min(100, Math.max(0, (weeklyMargin + 1500) / 3000 * 100))
   const weights = rollingAverage(Object.values(state.logs)
@@ -59,7 +63,7 @@ export function TodayPage() {
             <Link to={dateHref(sessionWasChanged ? '/activites' : '/musculation')} className="daily-summary-item"><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={sessionWasChanged ? `Le planning prévoyait ${template?.shortName ?? dayLabels[log.strengthActivity!.plannedDayType]}, mais ${actualSessionLabel} a été déclaré comme réalité. Clique pour modifier cette déclaration.` : template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance.` : 'Aucune séance de musculation n’est planifiée pour cette journée.'} placement="left">Séance :</ExplainedLabel><strong>{actualSessionLabel}</strong></Link>
             <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><SportShoe /></span><ExplainedLabel help="Nombre de pas de marche et de déplacement, sans les pas estimés pendant la course afin d’éviter le double comptage.">Pas hors course :</ExplainedLabel><strong>{log.totalSteps === undefined ? 'Non renseigné' : formatNumber(calc.walkingSteps)}</strong></Link>
             <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong></Link>
-            <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée de vélo enregistrée pour cette date. L’intensité choisie détermine l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${bikeMinutes} min` : 'Non renseigné'}</strong></Link>
+            <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée et puissance moyenne enregistrées. Les watts, le poids et la durée déterminent l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${formatDuration(bikeMinutes)}${bikeAverageWatts ? ` • ${bikeAverageWatts} W` : ''}` : 'Non renseigné'}</strong></Link>
           </div>
         </section>
 

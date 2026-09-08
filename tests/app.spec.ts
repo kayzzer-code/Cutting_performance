@@ -34,6 +34,37 @@ test('une activité ajuste la cible, évite le double comptage et persiste', asy
   expect(targetAfter).not.toBe(targetBefore)
 })
 
+test('le vélo en watts et le Stairmaster recalculent puis persistent leur dépense', async ({ page }) => {
+  await page.goto('/activites')
+  await page.getByLabel('Durée vélo', { exact: true }).fill('60')
+  await page.getByLabel('Watts moyens vélo', { exact: true }).fill('180')
+  await expect(page.locator('.bike-entry-card .readonly-field')).toContainText('689')
+
+  await page.getByRole('button', { name: 'Escalier', exact: true }).click()
+  await page.getByLabel('Minutes escalier', { exact: true }).fill('6')
+  await page.getByLabel('Secondes escalier', { exact: true }).fill('30')
+  await page.getByLabel('Niveau escalier Matrix', { exact: true }).fill('10')
+  await expect(page.locator('.stair-cardio')).toContainText('78')
+  await expect(page.locator('.stair-cardio')).toContainText('87')
+
+  await page.getByRole('button', { name: 'Enregistrer les activités' }).click()
+  await expect(page.getByText(/Activités enregistrées/)).toBeVisible()
+  const selectedDate = await page.getByLabel('Choisir la date du journal').inputValue()
+  const stored = await page.evaluate((date) => {
+    const state = JSON.parse(localStorage.getItem('cutting-performance-app:v1')!)
+    return state.logs[date].activities
+  }, selectedDate)
+  expect(stored.find((activity: { type: string }) => activity.type === 'cycling')).toMatchObject({ durationMin: 60, averageWatts: 180 })
+  expect(stored.find((activity: { type: string }) => activity.type === 'stair-climber')).toMatchObject({ durationMin: 6.5, level: 10, stepRateSpm: 78 })
+
+  await page.reload()
+  await expect(page.getByLabel('Durée vélo', { exact: true })).toHaveValue('60')
+  await expect(page.getByLabel('Watts moyens vélo', { exact: true })).toHaveValue('180')
+  await expect(page.locator('.bike-entry-card .readonly-field')).toContainText('689')
+  await page.goto(`/aujourdhui?date=${selectedDate}`)
+  await expect(page.locator('.daily-summary-card')).toContainText('1 h • 180 W')
+})
+
 test('une séance imprévue adapte la journée sans modifier le planning', async ({ page }) => {
   await page.goto('/activites')
   const performed = page.getByLabel('Séance de musculation réalisée')

@@ -20,9 +20,12 @@ export function migrateState(input: unknown): AppState {
   for (const [date, log] of Object.entries(input.logs)) {
     assert(isIsoDate(date) && record(log) && log.date === date && Array.isArray(log.activities) && Array.isArray(log.meals), 'journée')
     for (const activity of log.activities) {
-      assert(record(activity) && typeof activity.id === 'string' && ['running', 'cycling', 'jump-rope', 'rowing', 'elliptical', 'other'].includes(String(activity.type)), 'activité')
+      assert(record(activity) && typeof activity.id === 'string' && ['running', 'cycling', 'jump-rope', 'rowing', 'elliptical', 'stair-climber', 'other'].includes(String(activity.type)), 'activité')
       assert(typeof activity.durationMin === 'number' && Number.isFinite(activity.durationMin) && activity.durationMin >= 0, 'durée d’activité')
-      for (const field of ['distanceKm', 'met']) assert(activity[field] === undefined || typeof activity[field] === 'number' && Number.isFinite(activity[field]), `activité ${field}`)
+      for (const field of ['distanceKm', 'met', 'averageWatts', 'level', 'stepRateSpm']) assert(activity[field] === undefined || typeof activity[field] === 'number' && Number.isFinite(activity[field]), `activité ${field}`)
+      assert(activity.averageWatts === undefined || typeof activity.averageWatts === 'number' && activity.averageWatts > 0 && activity.averageWatts <= 3000, 'watts moyens vélo')
+      assert(activity.level === undefined || typeof activity.level === 'number' && Number.isInteger(activity.level) && activity.level >= 1 && activity.level <= 25, 'niveau escalier')
+      assert(activity.stepRateSpm === undefined || typeof activity.stepRateSpm === 'number' && activity.stepRateSpm > 0 && activity.stepRateSpm <= 300, 'cadence escalier')
     }
     for (const meal of log.meals) assert(record(meal) && typeof meal.id === 'string' && typeof meal.name === 'string' && typeof meal.calories === 'number' && Number.isFinite(meal.calories), 'repas')
     for (const field of ['plannedBaseCalories', 'targetSteps', 'totalSteps', 'caloriesConsumed', 'weightKg']) assert(log[field] === undefined || typeof log[field] === 'number' && Number.isFinite(log[field]), field)

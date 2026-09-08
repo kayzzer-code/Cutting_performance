@@ -4,6 +4,7 @@ export type ActivityType =
   | 'jump-rope'
   | 'rowing'
   | 'elliptical'
+  | 'stair-climber'
   | 'other'
 
 export interface Activity {
@@ -13,6 +14,9 @@ export interface Activity {
   durationMin: number
   distanceKm?: number
   met?: number
+  averageWatts?: number
+  level?: number
+  stepRateSpm?: number
   note?: string
 }
 

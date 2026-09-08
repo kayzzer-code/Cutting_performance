@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateDay, calculateWeeklyMargin, rollingAverage, suggestedCalorieAdjustment } from './calculations'
+import { calculateDay, calculateWeeklyMargin, matrixClimbMillStepRate, rollingAverage, suggestedCalorieAdjustment } from './calculations'
 import { adaptSettingsToProfile, estimatedBmr, targetDailyDeficit } from './planning'
 import { createInitialState } from './seed'
 import type { DailyLog } from './types'
@@ -48,6 +48,28 @@ describe('moteur de calcul calorique', () => {
     expect(result.otherCardioKcal).toBe(174)
     expect(result.appliedAdjustmentKcal).toBe(150)
     expect(result.adjustedCalorieTarget).toBe(3_250)
+  })
+
+  it('calcule le vélo avec la puissance moyenne plutôt qu’une intensité déclarative', () => {
+    const result = calculateDay({
+      date: '2026-08-27', totalSteps: 18_000, meals: [],
+      activities: [{ id: 'bike-watts', date: '2026-08-27', type: 'cycling', durationMin: 60, averageWatts: 180 }],
+    }, state.profile, state.settings)
+    expect(result.otherCardioKcal).toBe(689)
+    expect(result.appliedAdjustmentKcal).toBe(550)
+    expect(result.adjustedCalorieTarget).toBe(3_650)
+  })
+
+  it('convertit le niveau Matrix du Stairmaster en cadence et dépense liée au poids', () => {
+    expect(matrixClimbMillStepRate(1)).toBe(24)
+    expect(matrixClimbMillStepRate(10)).toBe(78)
+    expect(matrixClimbMillStepRate(25)).toBe(162)
+    const result = calculateDay({
+      date: '2026-08-27', totalSteps: 18_000, meals: [], weightKg: 90,
+      activities: [{ id: 'stairs', date: '2026-08-27', type: 'stair-climber', durationMin: 6.5, level: 10, stepRateSpm: 78 }],
+    }, state.profile, state.settings)
+    expect(result.otherCardioKcal).toBe(87)
+    expect(result.walkingSteps).toBe(18_000)
   })
 
   it('bascule un repos vers le profil épaules-bras sans convertir les séries en calories', () => {

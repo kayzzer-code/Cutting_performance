@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Bike, Cable, CircleEllipsis, Dumbbell, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
-import { calculateDay, estimateRunningSteps } from '../domain/calculations'
+import { Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Dumbbell, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
+import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, matrixClimbMillStepRate } from '../domain/calculations'
 import { formatLongDate } from '../domain/dates'
 import type { Activity, ActivityType, DailyLog, StrengthActivity } from '../domain/types'
 import { useApp } from '../state/AppContext'
@@ -40,13 +40,18 @@ export function ActivitiesPage() {
   const [runMinutes, setRunMinutes] = useState(existingRun?.durationMin ?? 0)
   const [runDistance, setRunDistance] = useState(existingRun?.distanceKm ?? 0)
   const [bikeMinutes, setBikeMinutes] = useState(existingBike?.durationMin ?? 0)
-  const [bikeIntensity, setBikeIntensity] = useState<'easy' | 'z2' | 'hard'>('z2')
+  const [bikeWatts, setBikeWatts] = useState(existingBike?.averageWatts ?? 0)
   const [extraOpen, setExtraOpen] = useState(false)
   const [extraType, setExtraType] = useState<ActivityType>('jump-rope')
   const [extraMinutes, setExtraMinutes] = useState(0)
+  const [stairSeconds, setStairSeconds] = useState(0)
+  const [stairLevel, setStairLevel] = useState(10)
   const [saved, setSaved] = useState(false)
   const pace = runDistance > 0 ? runMinutes / runDistance : 0
-  const bikeMet = bikeIntensity === 'easy' ? 4 : bikeIntensity === 'hard' ? 9 : 6.8
+  const legacyBikeMet = existingBike?.averageWatts === undefined ? existingBike?.met : undefined
+  const extraDurationMin = extraType === 'stair-climber' ? extraMinutes + stairSeconds / 60 : extraMinutes
+  const stairStepRate = matrixClimbMillStepRate(stairLevel)
+  const weightKg = log.weightKg ?? state.profile.currentWeightKg
   const strengthTemplate = state.templates.find((template) => template.id === strengthTemplateId)
   const strengthActivity = useMemo<StrengthActivity>(() => journalSession
     ? {
@@ -76,13 +81,23 @@ export function ActivitiesPage() {
     const replaced = log.activities.filter((activity) => !['running', 'cycling'].includes(activity.type))
     const activities: Activity[] = [...replaced]
     if (runMinutes > 0 && runDistance > 0) activities.push({ id: 'preview-run', date: selectedDate, type: 'running', durationMin: runMinutes, distanceKm: runDistance })
-    if (bikeMinutes > 0) activities.push({ id: 'preview-bike', date: selectedDate, type: 'cycling', durationMin: bikeMinutes, met: bikeMet })
-    if (extraMinutes > 0) activities.push({ id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraMinutes, met: extraType === 'jump-rope' ? 11.8 : 5 })
+    if (bikeMinutes > 0) activities.push({
+      id: 'preview-bike', date: selectedDate, type: 'cycling', durationMin: bikeMinutes,
+      averageWatts: bikeWatts > 0 ? bikeWatts : undefined,
+      met: bikeWatts <= 0 ? legacyBikeMet : undefined,
+    })
+    if (extraDurationMin > 0) activities.push(extraType === 'stair-climber'
+      ? { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, level: stairLevel, stepRateSpm: stairStepRate }
+      : { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, met: activityDefaultMet(extraType) })
     const shell = { ...log, activities, strengthActivity, totalSteps: 0 }
     const runningSteps = estimateRunningSteps(shell, state.settings.runCadenceSpm)
     return { ...shell, totalSteps: walkingSteps === null ? undefined : walkingSteps + runningSteps }
-  }, [bikeMet, bikeMinutes, extraMinutes, extraType, log, runDistance, runMinutes, selectedDate, state.settings.runCadenceSpm, strengthActivity, walkingSteps])
+  }, [bikeMinutes, bikeWatts, extraDurationMin, extraType, legacyBikeMet, log, runDistance, runMinutes, selectedDate, stairLevel, stairStepRate, state.settings.runCadenceSpm, strengthActivity, walkingSteps])
   const preview = calculateDay(previewLog, state.profile, state.settings)
+  const previewBike = previewLog.activities.find((activity) => activity.id === 'preview-bike')
+  const previewExtra = previewLog.activities.find((activity) => activity.id === 'preview-extra')
+  const bikeKcal = previewBike ? Math.round(estimateOtherCardioKcal(previewBike, weightKg)) : 0
+  const extraKcal = previewExtra ? Math.round(estimateOtherCardioKcal(previewExtra, weightKg)) : 0
 
   function saveActivities(event: FormEvent) {
     event.preventDefault()
@@ -148,19 +163,32 @@ export function ActivitiesPage() {
             </div></div>
           </section>
 
-          <section className="activity-entry-card reference-card">
+          <section className="activity-entry-card reference-card bike-entry-card">
             <span className="entry-icon teal"><Bike /></span>
-            <div className="entry-content"><h2><ExplainedLabel help="Le vélo est estimé avec la durée, ton poids et un niveau d’intensité exprimé par une valeur MET." placement="left">Vélo</ExplainedLabel></h2><div className="bike-fields">
-              <label><ExplainedLabel help="Facile correspond à une sortie légère, Z2 à un effort continu modéré, et Soutenu à une intensité plus élevée." placement="left">Intensité</ExplainedLabel><span className="segmented-control"><button type="button" className={bikeIntensity === 'easy' ? 'active' : ''} onClick={() => setBikeIntensity('easy')}>Facile</button><button type="button" className={bikeIntensity === 'z2' ? 'active' : ''} onClick={() => setBikeIntensity('z2')}>Z2</button><button type="button" className={bikeIntensity === 'hard' ? 'active' : ''} onClick={() => setBikeIntensity('hard')}>Soutenu</button></span></label>
+            <div className="entry-content"><h2><ExplainedLabel help="Le vélo est estimé automatiquement à partir de la durée, des watts moyens réellement affichés par le vélo et de ton poids du jour." placement="left">Vélo</ExplainedLabel></h2><div className="bike-fields power-bike-fields">
               <label><ExplainedLabel help="Temps total passé à pédaler pour cette activité.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée vélo" placeholder="0" type="number" inputMode="numeric" min="0" value={bikeMinutes || ''} onChange={(event) => setBikeMinutes(Number(event.target.value))} /><small>min</small></span></label>
-              <label><ExplainedLabel help="Dépense estimée à partir de l’intensité MET, de ton poids et de la durée." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(preview.otherCardioKcal)} <small>kcal</small></span></label>
+              <label><ExplainedLabel help="Puissance moyenne en watts indiquée par le vélo à la fin de la séance. Elle remplace les anciens boutons d’intensité." placement="left">Watts moyens</ExplainedLabel><span className="unit-input"><input aria-label="Watts moyens vélo" placeholder="0" type="number" inputMode="numeric" min="1" max="3000" step="1" required={bikeMinutes > 0 && legacyBikeMet === undefined} value={bikeWatts || ''} onChange={(event) => setBikeWatts(Number(event.target.value))} /><small>W</small></span></label>
+              <label><ExplainedLabel help="Estimation nette au-dessus du repos avec l’équation cyclo-ergomètre ACSM : les watts, la durée et ton poids du jour sont pris en compte." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(bikeKcal)} <small>kcal</small></span></label>
             </div></div>
           </section>
 
           <button className="outline-wide-action" type="button" onClick={() => setExtraOpen((value) => !value)}><Plus /> Ajouter un autre cardio</button>
-          <div className="secondary-activity-actions"><button type="button" onClick={() => { setExtraType('jump-rope'); setExtraOpen(true) }}><Cable /> Corde à sauter</button><button type="button" onClick={() => { setExtraType('other'); setExtraOpen(true) }}><CircleEllipsis /> Autre activité</button></div>
-          {extraOpen && <section className="extra-cardio reference-card"><select aria-label="Type de cardio supplémentaire" value={extraType} onChange={(event) => setExtraType(event.target.value as ActivityType)}><option value="jump-rope">Corde à sauter</option><option value="rowing">Rameur</option><option value="elliptical">Elliptique</option><option value="other">Autre</option></select><span className="unit-input"><input aria-label="Durée cardio supplémentaire" type="number" inputMode="numeric" min="0" value={extraMinutes} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></section>}
-          <div className="reference-info"><Info /> Les kilomètres de course remplacent leurs pas estimés afin d’éviter le double comptage.</div>
+          <div className="secondary-activity-actions three-actions"><button type="button" onClick={() => { setExtraType('jump-rope'); setExtraOpen(true) }}><Cable /> Corde à sauter</button><button type="button" onClick={() => { setExtraType('stair-climber'); setExtraOpen(true) }}><ChartNoAxesColumnIncreasing /> Escalier</button><button type="button" onClick={() => { setExtraType('other'); setExtraOpen(true) }}><CircleEllipsis /> Autre activité</button></div>
+          {extraOpen && <section className={`extra-cardio reference-card ${extraType === 'stair-climber' ? 'stair-cardio' : 'generic-extra-cardio'}`}>
+            <label className="extra-type-picker"><ExplainedLabel help="Choisis le cardio que tu as réellement effectué. L’escalier utilise le profil de niveaux Matrix ClimbMill." placement="left">Type de cardio</ExplainedLabel><select aria-label="Type de cardio supplémentaire" value={extraType} onChange={(event) => setExtraType(event.target.value as ActivityType)}><option value="jump-rope">Corde à sauter</option><option value="rowing">Rameur</option><option value="elliptical">Elliptique</option><option value="stair-climber">Escalier / Stairmaster (Matrix)</option><option value="other">Autre</option></select></label>
+            {extraType === 'stair-climber' ? <>
+              <label><ExplainedLabel help="Partie entière de la durée affichée par la machine.">Minutes</ExplainedLabel><span className="unit-input"><input aria-label="Minutes escalier" type="number" inputMode="numeric" min="0" max="300" step="1" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>
+              <label><ExplainedLabel help="Secondes restantes, entre 0 et 59. Exemple : 6 min 30 s.">Secondes</ExplainedLabel><span className="unit-input"><input aria-label="Secondes escalier" type="number" inputMode="numeric" min="0" max="59" step="1" value={stairSeconds || ''} onChange={(event) => setStairSeconds(Number(event.target.value))} /><small>s</small></span></label>
+              <label><ExplainedLabel help="Niveau indiqué par un ClimbMill Matrix à 25 niveaux. Le niveau 10 correspond à 78 marches par minute." placement="left">Niveau Matrix</ExplainedLabel><span className="unit-input"><input aria-label="Niveau escalier Matrix" type="number" inputMode="numeric" min="1" max="25" step="1" required value={stairLevel} onChange={(event) => setStairLevel(Number(event.target.value))} /><small>/ 25</small></span></label>
+              <label><ExplainedLabel help="Cadence déduite du tableau officiel Matrix. Elle est mémorisée avec l’activité afin de garder un calcul historique stable.">Cadence calculée</ExplainedLabel><span className="readonly-field">{formatNumber(stairStepRate)} <small>marches/min</small></span></label>
+              <label><ExplainedLabel help="Estimation fondée sur ton poids, la cadence Matrix, une marche de 20,3 cm et un rendement mécanique de 25 %. Se tenir fortement aux poignées peut surestimer la dépense." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(extraKcal)} <small>kcal</small></span></label>
+              <div className="reference-info stair-method-note"><Info /> Profil Matrix / Basic-Fit : le niveau 10 vaut 78 marches/min. Les marches de la machine ne sont pas ajoutées à tes pas de marche quotidiens.</div>
+            </> : <>
+              <label><ExplainedLabel help="Temps total consacré à ce cardio.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée cardio supplémentaire" type="number" inputMode="decimal" min="0" max="600" step="0.5" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>
+              <label><ExplainedLabel help="Estimation nette au-dessus du repos à partir de la durée, du poids et de la valeur MET associée à l’activité." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(extraKcal)} <small>kcal</small></span></label>
+            </>}
+          </section>}
+          <div className="reference-info"><Info /> Les kilomètres de course remplacent leurs pas estimés afin d’éviter le double comptage. Les marches du Stairmaster restent, elles, un cardio hors pas.</div>
         </div>
 
         <aside className="activity-live-summary reference-card">

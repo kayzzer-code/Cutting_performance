@@ -1,4 +1,5 @@
 import type {
+  Activity,
   CalculationSettings,
   DailyLog,
   DayCalculation,
@@ -11,6 +12,45 @@ const DEFAULT_MET: Record<string, number> = {
   rowing: 7,
   elliptical: 5,
   other: 5,
+}
+
+// Matrix Performance ClimbMill: official 25-level cadence table (steps/minute).
+export const MATRIX_CLIMBMILL_STEPS_PER_MINUTE = [
+  24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96,
+  102, 108, 114, 120, 126, 132, 138, 143, 148, 153, 158, 162,
+] as const
+
+export function matrixClimbMillStepRate(level: number): number {
+  const safeLevel = Math.min(25, Math.max(1, Math.round(level)))
+  return MATRIX_CLIMBMILL_STEPS_PER_MINUTE[safeLevel - 1]
+}
+
+export function estimateOtherCardioKcal(activity: Activity, weightKg: number): number {
+  const durationMin = Math.max(0, activity.durationMin)
+  if (!durationMin || weightKg <= 0) return 0
+
+  if (activity.type === 'cycling') {
+    if (activity.averageWatts !== undefined && activity.averageWatts > 0) {
+      // ACSM leg-cycling equation, expressed as net energy above rest.
+      return durationMin * (0.05508 * activity.averageWatts + 0.0175 * weightKg)
+    }
+    // Keep previously saved MET-based rides stable after the watts migration.
+    if (activity.met === undefined) return 0
+  }
+
+  if (activity.type === 'stair-climber') {
+    const stepRate = activity.stepRateSpm
+      ?? (activity.level === undefined ? 0 : matrixClimbMillStepRate(activity.level))
+    if (stepRate <= 0) return 0
+    const stepHeightMetres = 0.203
+    const gravitationalAcceleration = 9.80665
+    const assumedEfficiency = 0.25
+    const verticalWorkJoules = weightKg * gravitationalAcceleration * stepHeightMetres * stepRate * durationMin
+    return verticalWorkJoules / (4184 * assumedEfficiency)
+  }
+
+  const met = activity.met ?? DEFAULT_MET[activity.type] ?? 5
+  return Math.max(0, met - 1) * weightKg * (durationMin / 60)
 }
 
 export function roundTo(value: number, step: number): number {
@@ -66,10 +106,7 @@ export function calculateDay(
 
   const otherCardioKcal = log.activities
     .filter((activity) => activity.type !== 'running')
-    .reduce((sum, activity) => {
-      const met = activity.met ?? DEFAULT_MET[activity.type] ?? 5
-      return sum + Math.max(0, met - 1) * weight * (activity.durationMin / 60)
-    }, 0)
+    .reduce((sum, activity) => sum + estimateOtherCardioKcal(activity, weight), 0)
 
   const plannedActivityKcal =
     (targetSteps / 1000) *
@@ -158,6 +195,7 @@ export function activityLabel(type: string): string {
     'jump-rope': 'Corde à sauter',
     rowing: 'Rameur',
     elliptical: 'Elliptique',
+    'stair-climber': 'Escalier / Stairmaster',
     other: 'Autre cardio',
   }[type] ?? type
 }
