@@ -121,6 +121,91 @@ test('la nutrition enregistrée alimente le bilan de la semaine', async ({ page 
   await expect(page.locator('.week-matrix-card')).toContainText('2 750')
 })
 
+test('un produit scanné calcule les macros, alimente le total puis reste modifiable', async ({ page }) => {
+  await page.route('**/api/open-food-facts/3560070973570**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        result: { id: 'product_found' },
+        product: {
+          code: '3560070973570',
+          product_name: 'Petits pois extra-fins',
+          brands: 'Produit test',
+          product_quantity_unit: 'g',
+          nutriments: {
+            'energy-kcal_100g': 81,
+            proteins_100g: 5.4,
+            carbohydrates_100g: 9.7,
+            fat_100g: 0.4,
+            fiber_100g: 5.5,
+          },
+        },
+      }),
+    })
+  })
+  await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  await page.getByLabel('Code-barres du produit').fill('3560070973570')
+  await page.getByRole('button', { name: 'Rechercher' }).click()
+  await expect(page.getByLabel('Nom de l’aliment')).toHaveValue('Petits pois extra-fins')
+
+  await page.getByLabel('Quantité consommée').fill('250')
+  await expect(page.locator('.portion-preview')).toContainText('203 kcal')
+  await expect(page.locator('.portion-preview')).toContainText('P 13,5 g')
+  await page.getByRole('button', { name: 'Ajouter à la journée' }).click()
+  await expect(page.getByText('Petits pois extra-fins', { exact: true })).toBeVisible()
+  await expect(page.locator('.macro-summary-grid')).toContainText('13,5')
+
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
+  await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('203')
+  await page.reload()
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  await expect(page.getByText('Petits pois extra-fins', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Modifier Petits pois extra-fins' }).click()
+  await page.getByLabel('Quantité consommée').fill('200')
+  await page.getByRole('button', { name: 'Enregistrer les modifications' }).click()
+  await expect(page.locator('.food-entry-calories')).toContainText('162')
+  await page.getByRole('button', { name: 'Supprimer Petits pois extra-fins' }).click()
+  await expect(page.getByText('Aucun aliment détaillé')).toBeVisible()
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
+  await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('0')
+})
+
+test('le détail nutrition reste utilisable sans caméra ni produit référencé', async ({ page }) => {
+  await page.route('**/api/open-food-facts/1234567890123**', async (route) => {
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not_found' }) })
+  })
+  await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+  await page.getByRole('button', { name: 'Scanner', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeHidden()
+  await page.getByRole('button', { name: 'Scanner', exact: true }).click()
+  await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
+
+  await page.getByLabel('Code-barres du produit').fill('123')
+  await page.getByRole('button', { name: 'Rechercher' }).click()
+  await expect(page.getByRole('alert')).toContainText('entre 8 et 14 chiffres')
+  await page.getByLabel('Code-barres du produit').fill('1234567890123')
+  await page.getByRole('button', { name: 'Rechercher' }).click()
+  await expect(page.getByRole('alert')).toContainText('pas encore référencé')
+
+  await page.getByRole('button', { name: 'Saisir manuellement' }).click()
+  await page.getByLabel('Nom de l’aliment').fill('Aliment maison')
+  await page.getByLabel('Calories pour 100').fill('120')
+  await page.getByLabel('Protéines pour 100').fill('8')
+  await page.getByLabel('Quantité consommée').fill('150')
+  await page.getByRole('button', { name: 'Ajouter à la journée' }).click()
+  await expect(page.getByText('Aliment maison', { exact: true })).toBeVisible()
+  await expect(page.locator('.food-entry-calories')).toContainText('180')
+})
+
 test('les valeurs de la semaine ouvrent le détail du bon jour', async ({ page }) => {
   await page.goto('/semaine')
   const currentDate = await page.getByLabel('Choisir la date du journal').inputValue()
@@ -264,4 +349,41 @@ test('les formulaires restent utilisables sur mobile', async ({ page, isMobile }
   await page.goto('/activites')
   await expect(page.getByRole('spinbutton', { name: 'Pas hors course', exact: true })).toBeVisible()
   await expect(page.locator('.mobile-nav')).toBeVisible()
+})
+
+test('les grandes valeurs nutritionnelles ne se chevauchent pas sur téléphone', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Scénario réservé à la vue téléphone')
+  await page.goto('/nutrition')
+  await page.getByLabel('Calories consommées aujourd’hui').fill('3250')
+  await expect(page.getByText('kcal consommées', { exact: false })).toBeVisible()
+
+  const quickControlsFit = await page.locator('.quick-calorie-card').evaluate((card) => {
+    const main = card.querySelector('.giant-calorie-input')!.getBoundingClientRect()
+    const row = card.querySelector('.quick-add-row')!.getBoundingClientRect()
+    const buttons = [...card.querySelectorAll('.quick-add-row button')].map((element) => element.getBoundingClientRect())
+    const noPairOverlaps = buttons.every((first, index) => buttons.slice(index + 1).every((second) =>
+      first.right <= second.left || second.right <= first.left || first.bottom <= second.top || second.bottom <= first.top,
+    ))
+    return main.bottom <= row.top && noPairOverlaps && buttons.every((button) => button.left >= row.left && button.right <= row.right)
+  })
+  expect(quickControlsFit).toBe(true)
+
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  await page.getByRole('button', { name: 'Créer un aliment manuellement' }).click()
+  await page.getByLabel('Nom de l’aliment').fill('Préparation protéinée aux petits pois extra-fins et légumes méditerranéens')
+  await page.getByLabel('Calories pour 100').fill('950')
+  await page.getByLabel('Protéines pour 100').fill('250')
+  await page.getByLabel('Glucides pour 100').fill('315')
+  await page.getByLabel('Lipides pour 100').fill('180')
+  await page.getByLabel('Fibres pour 100').fill('99')
+  await page.getByLabel('Quantité consommée').fill('275')
+  await expect(page.locator('.portion-preview')).toContainText('2 613 kcal')
+  await page.getByRole('button', { name: 'Ajouter à la journée' }).click()
+  await expect(page.locator('.macro-summary-grid')).toContainText('866,3')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  const macrosFit = await page.locator('.macro-summary').evaluateAll((cards) => cards.every((card) => {
+    const value = card.querySelector('strong')
+    return Boolean(value) && value!.scrollWidth <= value!.clientWidth
+  }))
+  expect(macrosFit).toBe(true)
 })

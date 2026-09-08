@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { Crosshair, Flame, Info, Pencil, Plus, Save, TrendingUp, Utensils } from 'lucide-react'
+import { useState, type FormEvent, type SetStateAction } from 'react'
+import { Crosshair, Flame, Info, ListChecks, Pencil, Plus, Save, ScanBarcode, TrendingUp, Utensils } from 'lucide-react'
 import { calculateDay, calculateWeeklyMargin } from '../domain/calculations'
 import { formatLongDate, weekDates } from '../domain/dates'
 import { useApp } from '../state/AppContext'
@@ -7,17 +7,20 @@ import { formatNumber } from '../domain/format'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
 import { ExplainedLabel } from '../components/HelpTooltip'
+import { FoodDiary } from '../components/FoodDiary'
 
 export function NutritionPage() {
   const { state, setCalories, addMeal, updateLog, setWeeklyStrategy } = useApp()
   const { selectedDate } = useJournalDate()
   const log = journalLogForDate(state, selectedDate)
   const calc = calculateDay(log, state.profile, state.settings)
-  const [calories, setCaloriesInput] = useState(log.caloriesConsumed ?? 0)
+  const [calorieDrafts, setCalorieDrafts] = useState<Record<string, number>>({})
+  const calories = calorieDrafts[selectedDate] ?? log.caloriesConsumed ?? 0
   const [mealOpen, setMealOpen] = useState(false)
   const [mealName, setMealName] = useState('')
   const [mealCalories, setMealCalories] = useState(0)
   const [editingMealId, setEditingMealId] = useState<string | null>(null)
+  const [mode, setMode] = useState<'quick' | 'detailed'>('quick')
   const [saved, setSaved] = useState(false)
   const weekLogs = weekDates(selectedDate).map((date) => journalLogForDate(state, date))
   const weeklyMargin = calculateWeeklyMargin(weekLogs, state.profile, state.settings)
@@ -26,6 +29,13 @@ export function NutritionPage() {
   const remaining = calc.adjustedCalorieTarget - calories
   const remainingDays = Math.max(1, weekDates(selectedDate).filter((date) => date > selectedDate).length)
   const suggestion = Math.round(projectedMargin / remainingDays / 10) * 10
+
+  function setCaloriesInput(next: SetStateAction<number>) {
+    setCalorieDrafts((drafts) => {
+      const current = drafts[selectedDate] ?? log.caloriesConsumed ?? 0
+      return { ...drafts, [selectedDate]: typeof next === 'function' ? next(current) : next }
+    })
+  }
 
   function saveTotal(event: FormEvent) {
     event.preventDefault()
@@ -67,7 +77,12 @@ export function NutritionPage() {
           <SummaryMetric icon={<Flame />} label={remaining >= 0 ? 'Reste pour cette date' : 'Dépassé pour cette date'} value={Math.abs(remaining)} tone={remaining >= 0 ? 'teal' : 'orange'} help="Différence entre la cible recalculée et les calories saisies. Elle devient un dépassement lorsque le total consommé dépasse la cible." placement="right" />
         </section>
 
-        <section className="nutrition-main-grid">
+        <nav className="nutrition-mode-tabs" aria-label="Mode de saisie nutritionnelle">
+          <button type="button" className={mode === 'quick' ? 'active' : ''} aria-pressed={mode === 'quick'} onClick={() => setMode('quick')}><ListChecks /> Saisie rapide</button>
+          <button type="button" className={mode === 'detailed' ? 'active' : ''} aria-pressed={mode === 'detailed'} onClick={() => setMode('detailed')}><ScanBarcode /> Aliments & macros</button>
+        </nav>
+
+        {mode === 'quick' ? <section className="nutrition-main-grid">
           <form className="quick-calorie-card reference-card" onSubmit={saveTotal}>
             <h2><ExplainedLabel help="Tu peux saisir seulement le total de la journée. La répartition par repas reste facultative." placement="left">Saisie rapide</ExplainedLabel></h2>
             <label className="giant-calorie-input"><input aria-label="Calories consommées aujourd’hui" type="number" inputMode="numeric" min="0" step="10" value={calories} onChange={(event) => setCaloriesInput(Number(event.target.value))} /><span>kcal consommées<br/>pour cette date</span></label>
@@ -89,7 +104,7 @@ export function NutritionPage() {
             </section>
             <section className="weekly-suggestion-card"><div className="suggestion-head"><span className="suggestion-icon"><TrendingUp /></span><div><ExplainedLabel help="Répartition indicative de la marge restante sur les jours suivants de la semaine sélectionnée." placement="right">Suggestion :</ExplainedLabel><strong>{suggestion >= 0 ? '+' : '−'}{formatNumber(Math.abs(suggestion))} <small>kcal</small></strong><p>sur chacun des {remainingDays} prochains jours</p></div></div><p><Info /> La compensation hebdomadaire ne modifie pas automatiquement les repas déjà enregistrés.</p></section>
           </div>
-        </section>
+        </section> : <FoodDiary date={selectedDate} log={log} currentCalories={calories} setCurrentCalories={setCaloriesInput} updateLog={updateLog} />}
       </div>
     </div>
   )

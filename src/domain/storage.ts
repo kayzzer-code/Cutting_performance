@@ -27,7 +27,14 @@ export function migrateState(input: unknown): AppState {
       assert(activity.level === undefined || typeof activity.level === 'number' && Number.isInteger(activity.level) && activity.level >= 1 && activity.level <= 25, 'niveau escalier')
       assert(activity.stepRateSpm === undefined || typeof activity.stepRateSpm === 'number' && activity.stepRateSpm > 0 && activity.stepRateSpm <= 300, 'cadence escalier')
     }
-    for (const meal of log.meals) assert(record(meal) && typeof meal.id === 'string' && typeof meal.name === 'string' && typeof meal.calories === 'number' && Number.isFinite(meal.calories), 'repas')
+    for (const meal of log.meals) {
+      assert(record(meal) && typeof meal.id === 'string' && typeof meal.name === 'string' && typeof meal.calories === 'number' && Number.isFinite(meal.calories) && meal.calories >= 0, 'repas')
+      for (const field of ['proteinG', 'carbohydratesG', 'fatG', 'fiberG', 'quantity', 'caloriesPer100', 'proteinPer100G', 'carbohydratesPer100G', 'fatPer100G', 'fiberPer100G']) assert(meal[field] === undefined || typeof meal[field] === 'number' && Number.isFinite(meal[field]) && meal[field] >= 0, `repas ${field}`)
+      assert(meal.quantityUnit === undefined || ['g', 'ml'].includes(String(meal.quantityUnit)), 'unité du repas')
+      assert(meal.mealSlot === undefined || ['breakfast', 'lunch', 'snack', 'dinner'].includes(String(meal.mealSlot)), 'moment du repas')
+      assert(meal.source === undefined || ['open-food-facts', 'manual'].includes(String(meal.source)), 'source du repas')
+      for (const field of ['barcode', 'brand', 'imageUrl']) assert(meal[field] === undefined || typeof meal[field] === 'string', `repas ${field}`)
+    }
     for (const field of ['plannedBaseCalories', 'targetSteps', 'totalSteps', 'caloriesConsumed', 'weightKg']) assert(log[field] === undefined || typeof log[field] === 'number' && Number.isFinite(log[field]), field)
     if (log.strengthActivity) {
       assert(record(log.strengthActivity) && typeof log.strengthActivity.performed === 'boolean', 'séance de musculation déclarée')

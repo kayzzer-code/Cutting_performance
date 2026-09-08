@@ -24,6 +24,22 @@ export interface Meal {
   id: string
   name: string
   calories: number
+  proteinG?: number
+  carbohydratesG?: number
+  fatG?: number
+  fiberG?: number
+  quantity?: number
+  quantityUnit?: 'g' | 'ml'
+  mealSlot?: 'breakfast' | 'lunch' | 'snack' | 'dinner'
+  barcode?: string
+  brand?: string
+  imageUrl?: string
+  source?: 'open-food-facts' | 'manual'
+  caloriesPer100?: number
+  proteinPer100G?: number
+  carbohydratesPer100G?: number
+  fatPer100G?: number
+  fiberPer100G?: number
 }
 
 export interface SetLog {
