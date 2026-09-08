@@ -37,7 +37,11 @@ function Editor({ template, missing, readOnly }: { template?: TrainingTemplate; 
   function move(from: number, to: number) { if (to < 0 || to >= draft.exercises.length) return; setDraft(d => { const exercises = [...d.exercises]; exercises.splice(to, 0, exercises.splice(from, 1)[0]); return { ...d, exercises } }) }
   function selectExercise(def: ExerciseDefinition) {
     if (picker === 'add') setDraft(d => ({ ...d, exercises: [...d.exercises, newLine(def)] }))
-    else if (picker) updateLine(picker, { exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention })
+    else if (picker) updateLine(picker, {
+      exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention,
+      movementFamily: def.movementFamily, muscleContributions: structuredClone(def.muscleContributions ?? []), laterality: def.laterality,
+      restSeconds: def.defaultRestSeconds ?? 90,
+    })
     setPicker(null)
   }
   function persist() {

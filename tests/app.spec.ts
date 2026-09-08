@@ -174,6 +174,84 @@ test('un produit scanné calcule les macros, alimente le total puis reste modifi
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('0')
 })
 
+test('le scanner global ajoute rapidement un aliment à la date active sur téléphone', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Scénario réservé à la vue téléphone')
+  await page.route('**/api/open-food-facts/3560070973570**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        result: { id: 'product_found' },
+        product: {
+          code: '3560070973570',
+          product_name: 'Petits pois extra-fins',
+          brands: 'Produit test',
+          product_quantity_unit: 'g',
+          nutriments: {
+            'energy-kcal_100g': 81,
+            proteins_100g: 5.4,
+            carbohydrates_100g: 9.7,
+            fat_100g: 0.4,
+            fiber_100g: 5.5,
+          },
+        },
+      }),
+    })
+  })
+
+  for (const route of ['/aujourdhui', '/activites', '/nutrition', '/semaine', '/seances']) {
+    await page.goto(route)
+    await expect(page.locator('.global-scan-button')).toBeVisible()
+  }
+
+  await page.goto('/activites')
+  await page.locator('.global-scan-button').click()
+  await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeVisible()
+  await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
+  await page.getByLabel('Code-barres du produit').fill('3560070973570')
+  await page.getByRole('button', { name: 'Rechercher le produit' }).click()
+  await expect(page.getByRole('dialog', { name: 'Petits pois extra-fins' })).toBeVisible()
+  await page.getByLabel('Quantité consommée après le scan').fill('250')
+  await expect(page.locator('.quick-portion-result')).toContainText('203 kcal')
+  await expect(page.locator('.quick-portion-result')).toContainText('P 13,5 g')
+  await page.getByLabel('Repas après le scan').selectOption('snack')
+  await page.getByRole('button', { name: 'Ajouter à la journée' }).click()
+  await expect(page.getByRole('status')).toContainText('Petits pois extra-fins ajouté : 203 kcal')
+
+  await page.goto('/nutrition')
+  await expect(page.locator('.nutrition-summary-strip')).toContainText('203')
+  await expect(page.locator('.nutrition-macro-overview')).toContainText('13,5')
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  await expect(page.getByText('Petits pois extra-fins', { exact: true })).toBeVisible()
+})
+
+test('le scanner global guide les codes invalides et bloque une fiche sans calories', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Scénario réservé à la vue téléphone')
+  await page.route('**/api/open-food-facts/1234567890124**', async (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      status: 'success', result: { id: 'product_found' }, product: {
+        code: '1234567890124', product_name: 'Produit incomplet', product_quantity_unit: 'g',
+        nutriments: { proteins_100g: 12 },
+      },
+    }),
+  }))
+  await page.goto('/nutrition')
+  await page.locator('.nutrition-mobile-scan').click()
+  await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
+  await page.getByLabel('Code-barres du produit').fill('123')
+  await page.getByRole('button', { name: 'Rechercher le produit' }).click()
+  await expect(page.getByRole('alert')).toContainText('entre 8 et 14 chiffres')
+
+  await page.getByLabel('Code-barres du produit').fill('1234567890124')
+  await page.getByRole('button', { name: 'Rechercher le produit' }).click()
+  await expect(page.getByRole('dialog', { name: 'Produit incomplet' })).toContainText('Les calories sont absentes')
+  await expect(page.getByRole('button', { name: 'Ajouter à la journée' })).toBeDisabled()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+})
+
 test('le détail nutrition reste utilisable sans caméra ni produit référencé', async ({ page }) => {
   await page.route('**/api/open-food-facts/1234567890123**', async (route) => {
     await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not_found' }) })
@@ -186,8 +264,6 @@ test('le détail nutrition reste utilisable sans caméra ni produit référencé
   await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeHidden()
-  await page.getByRole('button', { name: 'Scanner', exact: true }).click()
-  await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
 
   await page.getByLabel('Code-barres du produit').fill('123')
   await page.getByRole('button', { name: 'Rechercher' }).click()
@@ -392,6 +468,15 @@ test('les grandes valeurs nutritionnelles ne se chevauchent pas sur téléphone'
   await page.goto('/nutrition')
   await page.getByLabel('Calories consommées aujourd’hui').fill('3250')
   await expect(page.getByText('kcal consommées', { exact: false })).toBeVisible()
+
+  const compactSummary = await page.locator('.nutrition-summary-strip').evaluate((summary) => {
+    const box = summary.getBoundingClientRect()
+    const items = [...summary.querySelectorAll('.nutrition-summary-metric')].map((item) => item.getBoundingClientRect())
+    return box.height <= 110 && items.length === 3 && items.every((item) => Math.abs(item.top - items[0].top) < 2)
+  })
+  expect(compactSummary).toBe(true)
+  await expect(page.locator('.nutrition-macro-overview')).toBeVisible()
+  await expect(page.locator('.nutrition-mobile-scan')).toBeVisible()
 
   const quickControlsFit = await page.locator('.quick-calorie-card').evaluate((card) => {
     const main = card.querySelector('.giant-calorie-input')!.getBoundingClientRect()

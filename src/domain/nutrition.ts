@@ -26,6 +26,8 @@ export interface PortionNutrition {
   fiberG?: number
 }
 
+export type MealSlot = NonNullable<Meal['mealSlot']>
+
 export function calculatePortion(per100: FoodPer100, quantity: number): PortionNutrition {
   const multiplier = Math.max(0, quantity) / 100
   const scaled = (value: number | null) => value === null ? undefined : roundNutrient(value * multiplier)
@@ -45,6 +47,31 @@ export function mealPer100(meal: Meal): FoodPer100 {
     carbohydratesG: meal.carbohydratesPer100G ?? null,
     fatG: meal.fatPer100G ?? null,
     fiberG: meal.fiberPer100G ?? null,
+  }
+}
+
+export function foodReferenceToMeal(food: FoodReference, quantity: number, mealSlot: MealSlot, id: string): Meal {
+  const portion = calculatePortion(food.per100, quantity)
+  return {
+    id,
+    name: food.name.trim(),
+    calories: portion.calories,
+    proteinG: portion.proteinG,
+    carbohydratesG: portion.carbohydratesG,
+    fatG: portion.fatG,
+    fiberG: portion.fiberG,
+    quantity,
+    quantityUnit: food.unit,
+    mealSlot,
+    barcode: food.barcode,
+    brand: food.brand,
+    imageUrl: food.imageUrl,
+    source: food.source,
+    caloriesPer100: food.per100.calories ?? undefined,
+    proteinPer100G: food.per100.proteinG ?? undefined,
+    carbohydratesPer100G: food.per100.carbohydratesG ?? undefined,
+    fatPer100G: food.per100.fatG ?? undefined,
+    fiberPer100G: food.per100.fiberG ?? undefined,
   }
 }
 

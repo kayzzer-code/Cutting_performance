@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { flushSync } from 'react-dom'
 import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, LockKeyhole, Repeat2, Save } from 'lucide-react'
 import { useApp } from '../state/AppContext'
 import { useJournalDate } from '../hooks/useJournalDate'
@@ -14,6 +15,7 @@ import { DayIcon, DraftGuard, Modal, SessionsShell } from '../components/session
 export function SessionsPlanningPage() {
   const { state, transact } = useApp()
   const { selectedDate } = useJournalDate()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const requested = params.get('week')
   const week = startOfWeek(isIsoDate(requested) ? requested : selectedDate)
@@ -42,6 +44,18 @@ export function SessionsPlanningPage() {
     setMessage('')
   }
   function navigateWeek(date: string) { const nextParams = new URLSearchParams(params); nextParams.set('week', startOfWeek(date)); setParams(nextParams); setActiveDate(date) }
+  function openDay(date: string) {
+    if (Object.keys(changes).length) {
+      const saved = transact(current => {
+        if (current.revision !== baseline) throw new Error('Le journal a changé depuis le début de cet aperçu. Recharge le planning avant d’ouvrir la journée.')
+        return previewSchedule(current, changes, replaceManual)
+      })
+      if (!saved) return
+      flushSync(() => setChanges({}))
+      setReplaceManual(false)
+    }
+    navigate(`/seances/journal?date=${date}`)
+  }
   function moved(swap: boolean) { if (!move) return; stage(move.to, next.schedule[move.from] ?? 'rest'); stage(move.from, swap ? next.schedule[move.to] ?? 'rest' : 'rest'); setMove(null) }
   const chosenDate = dates.includes(activeDate) ? activeDate : dates[0]
   return <SessionsShell><DraftGuard dirty={Object.keys(changes).length > 0} /><PageHeader title="Planifier mes séances" description="Prépare ta semaine et vérifie l’effet sur tes cibles." action={<><Button variant="secondary" onClick={() => setRepeat(true)}><Repeat2 /> Répéter la semaine</Button><Button disabled={!Object.keys(changes).length} onClick={() => setConfirm(true)}><Save /> Enregistrer le planning</Button></>} />
@@ -55,7 +69,7 @@ export function SessionsPlanningPage() {
       const calc = calculateDay(log, state.profile, state.settings)
       const type = next.plannedSessions?.[date]?.dayType ?? typeOfTemplate(template)
       return <Card className={`planning-day ${chosenDate === date ? 'mobile-active' : ''} ${date === selectedDate ? 'current-day' : ''}`} key={date} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!canEdit(date)) { setCorrection(date); return } try { const payload = JSON.parse(e.dataTransfer.getData('text/plain')); if (payload.from && payload.from !== date) { if (!canEdit(payload.from)) return; setMove({ from: payload.from, to: date }) } else if (payload.templateId) stage(date, payload.templateId) } catch { /* Foreign drag payload is ignored. */ } }}>
-        <h2>{formatShortDate(date)}</h2><button className={`day-pill type-${type}`} draggable={canEdit(date)} onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({ from: date }))} onClick={() => { if (!canEdit(date)) setCorrection(date); else { setChooseDate(date); setChoice(next.schedule[date] ?? 'rest') } }}>{template?.shortName ?? (next.schedule[date] && next.schedule[date] !== 'rest' ? 'Modèle introuvable' : 'Repos')}</button>
+        <h2><button className="planning-date-link" title={Object.keys(changes).length ? 'Ouvrir cette journée et enregistrer les changements en attente' : 'Ouvrir le journal de cette journée'} onClick={() => openDay(date)}>{formatShortDate(date)}</button></h2><button className={`day-pill type-${type}`} draggable={canEdit(date)} onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({ from: date }))} onClick={() => { if (!canEdit(date)) setCorrection(date); else { setChooseDate(date); setChoice(next.schedule[date] ?? 'rest') } }}>{template?.shortName ?? (next.schedule[date] && next.schedule[date] !== 'rest' ? 'Modèle introuvable' : 'Repos')}</button>
         <span className="planning-status">{!canEdit(date) && <LockKeyhole />}{log.training?.status === 'completed' ? 'Réalisée' : log.training ? 'En cours' : date < isoDate() ? 'Passée' : 'Planifiée'}</span><p>{template ? `${template.exercises.length} exercices` : '—'}</p><small>Base planifiée</small><strong className="planning-calories">{formatNumber(calc.plannedBaseCalories)} <small>kcal</small></strong><small>{formatNumber(calc.targetSteps)} pas cibles</small>
         <label className="planning-select"><span className="sr-only">Séance du {date}</span><select aria-label={`Séance du ${date}`} disabled={!canEdit(date)} value={next.schedule[date] ?? 'rest'} onChange={e => stage(date, e.target.value)}><option value="rest">Repos</option>{templates.map(t => <option key={t.id} value={t.id}>{t.shortName}</option>)}{template && !templates.some(t => t.id === template.id) && <option value={template.id}>{template.shortName} (archivé, déjà prévu)</option>}</select></label>
         {template && <Link to={`/seances/${template.id}?date=${date <= isoDate() ? date : selectedDate}`}>Voir les exercices</Link>}{date <= isoDate() && log.training && <Link to={`/seances/journal?date=${date}`}>Voir le journal réel</Link>}{!canEdit(date) && <button className="text-button" onClick={() => setCorrection(date)}>Corriger cette journée</button>}

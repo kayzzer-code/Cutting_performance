@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useBlocker } from 'react-router-dom'
-import { BicepsFlexed, Dumbbell, Moon, X } from 'lucide-react'
+import { BicepsFlexed, Dumbbell, LibraryBig, Moon, X } from 'lucide-react'
 import { useJournalDate } from '../../hooks/useJournalDate'
 import { useApp } from '../../state/AppContext'
 import { Button, Field, SelectField } from '../ui'
@@ -8,13 +8,14 @@ import { conventionLabels, dayLabels, normalized, trainingLog, uid } from '../..
 import { calculateDay } from '../../domain/calculations'
 import { formatShortDate } from '../../domain/dates'
 import { formatNumber } from '../../domain/format'
-import type { AppState, DayType, ExerciseDefinition, LoadConvention } from '../../domain/types'
+import { muscleGroups, muscleMeta } from '../../domain/exerciseCatalogue'
+import type { AppState, DayType, ExerciseDefinition, LoadConvention, MuscleGroup } from '../../domain/types'
 
 export function SessionsShell({ children }: { children: ReactNode }) {
   const { dateHref } = useJournalDate()
   const { storageStatus } = useApp()
   return <section className="sessions-page"><nav className="session-tabs" aria-label="Onglets séances">
-    <NavLink to={dateHref('/seances')} end>Mes séances</NavLink><NavLink to={dateHref('/seances/planning')}>Planning</NavLink><NavLink to={dateHref('/seances/statistiques')}>Statistiques</NavLink><Link className="journal-shortcut" to={dateHref('/seances/journal')}>Journal du jour</Link>
+    <NavLink to={dateHref('/seances')} end>Mes séances</NavLink><NavLink to={dateHref('/seances/exercices')}><LibraryBig aria-hidden="true" /> Exercices</NavLink><NavLink to={dateHref('/seances/planning')}>Planning</NavLink><NavLink to={dateHref('/seances/statistiques')}>Statistiques</NavLink><Link className="journal-shortcut" to={dateHref('/seances/journal')}>Journal du jour</Link>
   </nav><div className="session-save-status" role="status">{storageStatus}</div>{children}</section>
 }
 export function DayIcon({ type }: { type: DayType }) {
@@ -50,7 +51,24 @@ export function DraftGuard({ dirty }: { dirty: boolean }) {
   }, [dirty])
   return blocker.state === 'blocked' ? <Modal title="Quitter le brouillon ?" onClose={() => blocker.reset()}><p>Les modifications non enregistrées seront abandonnées.</p><div className="session-actions"><Button variant="secondary" onClick={() => blocker.reset()}>Continuer la modification</Button><Button variant="danger" onClick={() => blocker.proceed()}>Abandonner et quitter</Button></div></Modal> : null
 }
-const pickerDrafts = new Map<string, { search: string; selected: string; custom: boolean; name: string; equipment: string; convention: LoadConvention }>()
+type PickerDraft = {
+  search: string
+  selected: string
+  custom: boolean
+  name: string
+  equipment: string
+  convention: LoadConvention
+  muscle: string
+  equipmentFilter: string
+  movement: string
+  customMuscle: MuscleGroup
+  customSecondary: '' | MuscleGroup
+  customSecondaryCoefficient: number
+  customMovement: string
+  laterality: 'bilateral' | 'unilateral'
+  restSeconds: number
+}
+const pickerDrafts = new Map<string, PickerDraft>()
 export function ExercisePicker({ onPick, onClose, title = 'Ajouter un exercice', children, draftKey = 'catalogue' }: { onPick: (exercise: ExerciseDefinition) => void; onClose: () => void; title?: string; children?: ReactNode; draftKey?: string }) {
   const { state, transact } = useApp()
   const [cached] = useState(() => pickerDrafts.get(draftKey))
@@ -60,14 +78,32 @@ export function ExercisePicker({ onPick, onClose, title = 'Ajouter un exercice',
   const [name, setName] = useState(cached?.name ?? '')
   const [equipment, setEquipment] = useState(cached?.equipment ?? '')
   const [convention, setConvention] = useState<LoadConvention>(cached?.convention ?? 'total')
-  useEffect(() => { pickerDrafts.set(draftKey, { search, selected, custom, name, equipment, convention }) }, [draftKey, search, selected, custom, name, equipment, convention])
-  const defs = (state.catalogue ?? []).filter(e => !e.archived && normalized(`${e.name} ${e.equipmentId}`).includes(normalized(search)))
+  const [muscle, setMuscle] = useState(cached?.muscle ?? '')
+  const [equipmentFilter, setEquipmentFilter] = useState(cached?.equipmentFilter ?? '')
+  const [movement, setMovement] = useState(cached?.movement ?? '')
+  const [customMuscle, setCustomMuscle] = useState<MuscleGroup>(cached?.customMuscle ?? 'chest')
+  const [customSecondary, setCustomSecondary] = useState<'' | MuscleGroup>(cached?.customSecondary ?? '')
+  const [customSecondaryCoefficient, setCustomSecondaryCoefficient] = useState(cached?.customSecondaryCoefficient ?? 0.5)
+  const [customMovement, setCustomMovement] = useState(cached?.customMovement ?? '')
+  const [laterality, setLaterality] = useState<'bilateral' | 'unilateral'>(cached?.laterality ?? 'bilateral')
+  const [restSeconds, setRestSeconds] = useState(cached?.restSeconds ?? 90)
+  useEffect(() => { pickerDrafts.set(draftKey, { search, selected, custom, name, equipment, convention, muscle, equipmentFilter, movement, customMuscle, customSecondary, customSecondaryCoefficient, customMovement, laterality, restSeconds }) }, [draftKey, search, selected, custom, name, equipment, convention, muscle, equipmentFilter, movement, customMuscle, customSecondary, customSecondaryCoefficient, customMovement, laterality, restSeconds])
+  const equipmentOptions = [...new Set((state.catalogue ?? []).filter(e => !e.archived).map(e => e.equipmentId))].sort((a, b) => a.localeCompare(b, 'fr'))
+  const movementOptions = [...new Set((state.catalogue ?? []).filter(e => !e.archived).map(e => e.movementFamily).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'fr'))
+  const defs = (state.catalogue ?? []).filter(e => {
+    if (e.archived || muscle && !e.muscleContributions?.some(item => item.muscleId === muscle)) return false
+    if (equipmentFilter && e.equipmentId !== equipmentFilter) return false
+    if (movement && e.movementFamily !== movement) return false
+    return normalized(`${e.name} ${e.equipmentId} ${e.movementFamily ?? ''} ${(e.aliases ?? []).join(' ')} ${(e.muscleContributions ?? []).map(item => muscleMeta(item.muscleId).label).join(' ')}`).includes(normalized(search))
+  })
   return <Modal title={title} onClose={onClose} drawer>
     <Field label="Chercher un exercice" type="search" value={search} onChange={e => setSearch(e.target.value)} />
-    <div className="exercise-catalogue">{defs.map(e => <label key={e.id} className={selected === e.id ? 'selected' : ''}><input type="radio" name="catalogue-exercise" checked={selected === e.id} onChange={() => { setSelected(e.id); setCustom(false) }} /><span><strong>{e.name}</strong><small>{e.equipmentId === 'legacy-unspecified' ? 'Matériel historique non précisé' : e.equipmentId} · {conventionLabels[e.convention]}</small></span></label>)}{!defs.length && <p>Aucun exercice trouvé. Crée ton exercice personnalisé.</p>}</div>
+    <div className="exercise-picker-filters"><SelectField label="Muscle" value={muscle} onChange={e => setMuscle(e.target.value)}><option value="">Tous</option>{muscleGroups.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</SelectField><SelectField label="Matériel" value={equipmentFilter} onChange={e => setEquipmentFilter(e.target.value)}><option value="">Tous</option>{equipmentOptions.map(item => <option key={item}>{item}</option>)}</SelectField><SelectField label="Mouvement" value={movement} onChange={e => setMovement(e.target.value)}><option value="">Tous</option>{movementOptions.map(item => <option key={item}>{item}</option>)}</SelectField></div>
+    <div className="exercise-catalogue">{defs.map(e => <label key={e.id} className={selected === e.id ? 'selected' : ''}><input type="radio" name="catalogue-exercise" checked={selected === e.id} onChange={() => { setSelected(e.id); setCustom(false) }} /><span><strong>{e.name}</strong><small>{e.equipmentId === 'legacy-unspecified' ? 'Matériel historique non précisé' : e.equipmentId} · {e.movementFamily ?? conventionLabels[e.convention]}</small><span className="muscle-tags">{e.muscleContributions?.slice(0, 3).map(item => <span key={item.muscleId} className={`muscle-tag role-${item.role}`}>{muscleMeta(item.muscleId).shortLabel}</span>)}</span></span></label>)}{!defs.length && <p>Aucun exercice trouvé. Crée ton exercice personnalisé.</p>}</div>
     <Button variant="secondary" onClick={() => setCustom(!custom)}>Créer un exercice personnalisé</Button>
-    {custom && <form className="custom-exercise-form" onSubmit={e => { e.preventDefault(); const def: ExerciseDefinition = { id: uid('exercise'), name: name.trim(), equipmentId: equipment.trim(), convention }; if (def.name && def.equipmentId && transact(s => ({ ...s, catalogue: [...(s.catalogue ?? []), def] }))) { setSelected(def.id); setCustom(false) } }}>
+    {custom && <form className="custom-exercise-form" onSubmit={e => { e.preventDefault(); const def: ExerciseDefinition = { id: uid('exercise'), name: name.trim(), equipmentId: equipment.trim(), convention, isCustom: true, muscleGroup: customMuscle, movementFamily: customMovement.trim() || 'Autre', laterality, defaultRestSeconds: restSeconds, muscleContributions: [{ muscleId: customMuscle, role: 'primary', coefficient: 1 }, ...(customSecondary ? [{ muscleId: customSecondary, role: 'secondary' as const, coefficient: customSecondaryCoefficient }] : [])] }; if (def.name && def.equipmentId && transact(s => ({ ...s, catalogue: [...(s.catalogue ?? []), def] }))) { setSelected(def.id); setCustom(false) } }}>
       <Field label="Nom de l’exercice" value={name} required maxLength={100} onChange={e => setName(e.target.value)} /><Field label="Matériel / variante" value={equipment} required maxLength={80} placeholder="Ex. machine A, haltères…" onChange={e => setEquipment(e.target.value)} />
+      <div className="custom-exercise-grid"><SelectField label="Muscle principal" value={customMuscle} onChange={e => setCustomMuscle(e.target.value as MuscleGroup)}>{muscleGroups.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</SelectField><SelectField label="Muscle secondaire" value={customSecondary} onChange={e => setCustomSecondary(e.target.value as '' | MuscleGroup)}><option value="">Aucun</option>{muscleGroups.filter(item => item.id !== customMuscle).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</SelectField>{customSecondary && <Field label="Coefficient secondaire" type="number" min={0} max={1} step={0.1} value={customSecondaryCoefficient} onChange={e => setCustomSecondaryCoefficient(Number(e.target.value))} />}<Field label="Famille de mouvement" value={customMovement} maxLength={80} placeholder="Ex. Tirage horizontal" onChange={e => setCustomMovement(e.target.value)} /><SelectField label="Latéralité" value={laterality} onChange={e => setLaterality(e.target.value as 'bilateral' | 'unilateral')}><option value="bilateral">Bilatéral</option><option value="unilateral">Unilatéral</option></SelectField><Field label="Repos par défaut" type="number" min={15} max={600} step={5} suffix="s" value={restSeconds} onChange={e => setRestSeconds(Number(e.target.value))} /></div>
       <SelectField label="Convention de charge" value={convention} onChange={e => setConvention(e.target.value as LoadConvention)}>{Object.entries(conventionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectField><Button type="submit">Créer dans le catalogue</Button>
     </form>}
     {children}

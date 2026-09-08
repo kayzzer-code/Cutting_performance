@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
-test('sept vues du module séances — données de test isolées', async ({ page }, testInfo) => {
+test('vues clés du module séances — données de test isolées', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Les captures mobiles sont réalisées dans ce même scénario.')
   test.setTimeout(60000)
   const directory = join(process.cwd(), 'test-results', 'sessions-visual')
@@ -16,10 +16,12 @@ test('sept vues du module séances — données de test isolées', async ({ page
     await page.screenshot({ path: join(directory, name), fullPage, animations: 'disabled' })
   }
   await capture('01-bibliotheque.png')
+  await page.goto('/seances/exercices')
+  await capture('02-catalogue-exercices.png')
   await page.goto('/seances/lower-a/modifier')
-  await capture('02-editeur.png', true)
+  await capture('03-editeur.png', true)
   await page.goto('/seances/planning')
-  await capture('03-planning.png')
+  await capture('04-planning.png')
   // Explicitly synthetic fixture, only in Playwright's isolated browser context.
   const date = await page.getByLabel('Choisir la date du journal').inputValue()
   await page.evaluate(({ date }) => {
@@ -43,15 +45,19 @@ test('sept vues du module séances — données de test isolées', async ({ page
     localStorage.setItem(key, JSON.stringify(state))
   }, { date })
   await page.goto('/seances/journal')
+  await capture('05-journal-desktop.png')
   await page.getByRole('button', { name: 'Remplacer Presse à cuisses', exact: true }).click()
-  await capture('04-journal-remplacement.png')
+  await capture('06-journal-remplacement.png')
   await page.getByRole('button', { name: 'Fermer le panneau' }).click()
   await page.goto('/seances/statistiques?exerciseId=hack-squat&equipmentId=Machine+test+A')
-  await capture('05-statistiques.png')
+  await capture('07-statistiques-exercice.png')
+  await page.goto('/seances/statistiques?view=muscles')
+  await capture('08-statistiques-muscles.png')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/seances/journal')
-  await capture('06-mobile-journal.png', true)
+  await capture('09-mobile-journal-viewport.png')
+  await capture('10-mobile-journal-complet.png', true)
   await page.goto('/seances/planning')
   await page.locator('.planning-day.mobile-active').getByRole('button', { name: 'Lower A', exact: true }).click()
-  await capture('07-mobile-planning.png')
+  await capture('11-mobile-planning.png')
 })

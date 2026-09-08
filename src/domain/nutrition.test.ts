@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculatePortion, sumMealNutrition } from './nutrition'
+import { calculatePortion, foodReferenceToMeal, sumMealNutrition } from './nutrition'
 import { normalizeOpenFoodFactsProduct } from '../services/openFoodFacts'
 
 describe('suivi nutritionnel détaillé', () => {
@@ -28,5 +28,15 @@ describe('suivi nutritionnel détaillé', () => {
       { id: 'a', name: 'A', calories: 200, proteinG: 10, carbohydratesG: 20, fatG: 5, fiberG: 3 },
       { id: 'b', name: 'B', calories: 100, proteinG: 4 },
     ])).toEqual({ calories: 300, proteinG: 14, carbohydratesG: 20, fatG: 5, fiberG: 3 })
+  })
+
+  it('transforme le produit scanné en entrée de journal complète', () => {
+    expect(foodReferenceToMeal({
+      barcode: '3560070973570', name: 'Petits pois', brand: 'Exemple', unit: 'g', source: 'open-food-facts', imageUrl: '',
+      per100: { calories: 81, proteinG: 5.4, carbohydratesG: 9.7, fatG: 0.4, fiberG: 5.5 },
+    }, 250, 'lunch', 'meal-1')).toMatchObject({
+      id: 'meal-1', name: 'Petits pois', quantity: 250, quantityUnit: 'g', mealSlot: 'lunch', calories: 203,
+      proteinG: 13.5, carbohydratesG: 24.3, fatG: 1, fiberG: 13.8,
+    })
   })
 })

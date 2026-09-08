@@ -53,12 +53,31 @@ export interface SetLog {
 
 export type DayType = 'upper' | 'lower' | 'shoulders-arms' | 'rest'
 export type LoadConvention = 'total' | 'per-dumbbell' | 'machine' | 'bodyweight' | 'assisted' | 'unknown'
+export type MuscleGroup =
+  | 'chest' | 'lats' | 'upper-back' | 'traps'
+  | 'front-delts' | 'side-delts' | 'rear-delts'
+  | 'biceps' | 'brachialis' | 'forearms' | 'triceps'
+  | 'quads' | 'hamstrings' | 'glutes' | 'adductors' | 'abductors'
+  | 'calves' | 'abs' | 'lower-back'
+export type MuscleRole = 'primary' | 'secondary' | 'stabilizer'
+export interface MuscleContribution {
+  muscleId: MuscleGroup
+  role: MuscleRole
+  coefficient: number
+}
 export interface ExerciseDefinition {
   id: string
   name: string
   equipmentId: string
   convention: LoadConvention
   muscleGroup?: string
+  aliases?: string[]
+  movementFamily?: string
+  muscleContributions?: MuscleContribution[]
+  laterality?: 'bilateral' | 'unilateral'
+  defaultRestSeconds?: number
+  isCustom?: boolean
+  favourite?: boolean
   archived?: boolean
 }
 export interface TemplateExercise {
@@ -74,6 +93,9 @@ export interface TemplateExercise {
   repsMax?: number
   targetRir?: number
   restSeconds?: number
+  movementFamily?: string
+  muscleContributions?: MuscleContribution[]
+  laterality?: 'bilateral' | 'unilateral'
 }
 
 export interface ExerciseLog extends TemplateExercise {

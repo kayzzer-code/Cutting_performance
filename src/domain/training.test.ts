@@ -31,13 +31,43 @@ describe('migration et sauvegarde récupérable', () => {
   it('sauvegarde le JSON brut avant la migration, et ne le remplace pas si la sauvegarde échoue', () => {
     const raw = JSON.stringify(createInitialState(date)); const map = new Map([[STORAGE_KEY, raw]])
     const storage = { getItem: (key: string) => map.get(key) ?? null, setItem: (key: string, value: string) => { map.set(key, value) } }
-    expect(loadStoredState(storage).state.schemaVersion).toBe(3)
+    expect(loadStoredState(storage).state.schemaVersion).toBe(5)
     expect(map.get(BACKUP_KEY)).toBe(raw)
     loadStoredState(storage)
     expect(map.get(BACKUP_KEY)).toBe(raw)
     map.set(STORAGE_KEY, raw); map.delete(BACKUP_KEY)
     expect(() => loadStoredState({ ...storage, setItem: () => { throw new Error('Quota') } })).toThrow('Quota')
     expect(map.get(STORAGE_KEY)).toBe(raw)
+  })
+  it('met Upper A à jour sans réécrire les séances historiques', () => {
+    const state = previewSchedule(migrateState(createInitialState(date)), { [date]: 'upper-a' })
+    const oldTemplate = state.templates.find(template => template.id === 'upper-a')!
+    const oldHistorical = structuredClone(oldTemplate)
+    const legacy = {
+      ...state,
+      schemaVersion: 4,
+      templates: state.templates.map(template => template.id === 'upper-a' ? { ...template, exercises: template.exercises.slice(0, 2) } : template),
+      logs: {
+        ...state.logs,
+        [addDays(date, -1)]: {
+          date: addDays(date, -1), meals: [], activities: [],
+          training: { id: 'upper-a-history', date: addDays(date, -1), templateId: 'upper-a', name: oldTemplate.name, status: 'completed' as const, exercises: oldHistorical.exercises.map(exercise => ({ ...exercise, sets: [] })) },
+        },
+      },
+    }
+    const next = migrateState(legacy)
+    expect(next.templates.find(template => template.id === 'upper-a')?.exercises.map(exercise => exercise.exerciseId)).toEqual([
+      'incline-bench-dumbbell-row',
+      'pulldown-neutral',
+      'dumbbell-fly',
+      'cable-fly',
+      'cable-curl',
+      'pushdown',
+    ])
+    expect(next.plannedSessions?.[date]?.template?.exercises.map(exercise => exercise.exerciseId)).toEqual([
+      'incline-bench-dumbbell-row', 'pulldown-neutral', 'dumbbell-fly', 'cable-fly', 'cable-curl', 'pushdown',
+    ])
+    expect(next.logs[addDays(date, -1)].training?.exercises.map(exercise => exercise.exerciseId)).toEqual(oldHistorical.exercises.map(exercise => exercise.exerciseId))
   })
   it('refuse un état corrompu sans effacement silencieux', () => {
     expect(() => migrateState({ schemaVersion: 2, templates: [], logs: null })).toThrow()

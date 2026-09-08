@@ -5,9 +5,10 @@ import type { IScannerControls } from '@zxing/browser'
 interface BarcodeScannerModalProps {
   onClose: () => void
   onDetected: (barcode: string) => void
+  onManual?: () => void
 }
 
-export function BarcodeScannerModal({ onClose, onDetected }: BarcodeScannerModalProps) {
+export function BarcodeScannerModal({ onClose, onDetected, onManual = onClose }: BarcodeScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const onDetectedRef = useRef(onDetected)
   const onCloseRef = useRef(onClose)
@@ -67,7 +68,7 @@ export function BarcodeScannerModal({ onClose, onDetected }: BarcodeScannerModal
         {failed && <CameraOff aria-hidden="true" />}
       </div>
       <div className="scanner-status" role="status" aria-live="polite">{failed ? <CameraOff /> : <Camera />}{status}</div>
-      <button className="outline-teal-action scanner-manual-action" type="button" onClick={onClose}>Saisir le code manuellement</button>
+      <button className="outline-teal-action scanner-manual-action" type="button" onClick={onManual}>Saisir le code manuellement</button>
     </section>
   </div>
 }

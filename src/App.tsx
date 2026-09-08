@@ -12,6 +12,7 @@ const SessionsLibraryPage = lazy(() => import('./pages/SessionsLibraryPage').the
 const SessionEditorPage = lazy(() => import('./pages/SessionEditorPage').then((module) => ({ default: module.SessionEditorPage })))
 const SessionsPlanningPage = lazy(() => import('./pages/SessionsPlanningPage').then((module) => ({ default: module.SessionsPlanningPage })))
 const SessionsStatsPage = lazy(() => import('./pages/SessionsStatsPage').then((module) => ({ default: module.SessionsStatsPage })))
+const ExercisesLibraryPage = lazy(() => import('./pages/ExercisesLibraryPage').then((module) => ({ default: module.ExercisesLibraryPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
 
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/musculation" element={<TrainingAlias />} />
         <Route path="/seances" element={<SessionsLibraryPage />} />
         <Route path="/seances/nouvelle" element={<SessionEditorPage />} />
+        <Route path="/seances/exercices" element={<ExercisesLibraryPage />} />
         <Route path="/seances/planning" element={<SessionsPlanningPage />} />
         <Route path="/seances/journal" element={<TrainingPage />} />
         <Route path="/seances/statistiques" element={<SessionsStatsPage />} />

@@ -3,17 +3,19 @@ import { Crosshair, Flame, Info, ListChecks, Pencil, Plus, Save, ScanBarcode, Tr
 import { calculateDay, calculateWeeklyMargin } from '../domain/calculations'
 import { formatLongDate, weekDates } from '../domain/dates'
 import { useApp } from '../state/AppContext'
-import { formatNumber } from '../domain/format'
+import { formatDecimal, formatNumber } from '../domain/format'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
+import { sumMealNutrition } from '../domain/nutrition'
 import { ExplainedLabel } from '../components/HelpTooltip'
 import { FoodDiary } from '../components/FoodDiary'
 
 export function NutritionPage() {
   const { state, setCalories, addMeal, updateLog, setWeeklyStrategy } = useApp()
-  const { selectedDate } = useJournalDate()
+  const { selectedDate, openFoodScanner } = useJournalDate()
   const log = journalLogForDate(state, selectedDate)
   const calc = calculateDay(log, state.profile, state.settings)
+  const macroTotals = sumMealNutrition(log.meals)
   const [calorieDrafts, setCalorieDrafts] = useState<Record<string, number>>({})
   const calories = calorieDrafts[selectedDate] ?? log.caloriesConsumed ?? 0
   const [mealOpen, setMealOpen] = useState(false)
@@ -77,6 +79,15 @@ export function NutritionPage() {
           <SummaryMetric icon={<Flame />} label={remaining >= 0 ? 'Reste pour cette date' : 'Dépassé pour cette date'} value={Math.abs(remaining)} tone={remaining >= 0 ? 'teal' : 'orange'} help="Différence entre la cible recalculée et les calories saisies. Elle devient un dépassement lorsque le total consommé dépasse la cible." placement="right" />
         </section>
 
+        <section className="nutrition-macro-overview reference-card" aria-label="Macros consommées aujourd’hui">
+          <NutritionMacro label="Protéines" shortLabel="P" value={macroTotals.proteinG} tone="protein" />
+          <NutritionMacro label="Glucides" shortLabel="G" value={macroTotals.carbohydratesG} tone="carbs" />
+          <NutritionMacro label="Lipides" shortLabel="L" value={macroTotals.fatG} tone="fat" />
+          <NutritionMacro label="Fibres" shortLabel="F" value={macroTotals.fiberG} tone="fiber" />
+        </section>
+
+        <button className="nutrition-mobile-scan" type="button" onClick={openFoodScanner}><ScanBarcode /><span><strong>Scanner un aliment</strong><small>La caméra s’ouvre immédiatement</small></span></button>
+
         <nav className="nutrition-mode-tabs" aria-label="Mode de saisie nutritionnelle">
           <button type="button" className={mode === 'quick' ? 'active' : ''} aria-pressed={mode === 'quick'} onClick={() => setMode('quick')}><ListChecks /> Saisie rapide</button>
           <button type="button" className={mode === 'detailed' ? 'active' : ''} aria-pressed={mode === 'detailed'} onClick={() => setMode('detailed')}><ScanBarcode /> Aliments & macros</button>
@@ -104,10 +115,14 @@ export function NutritionPage() {
             </section>
             <section className="weekly-suggestion-card"><div className="suggestion-head"><span className="suggestion-icon"><TrendingUp /></span><div><ExplainedLabel help="Répartition indicative de la marge restante sur les jours suivants de la semaine sélectionnée." placement="right">Suggestion :</ExplainedLabel><strong>{suggestion >= 0 ? '+' : '−'}{formatNumber(Math.abs(suggestion))} <small>kcal</small></strong><p>sur chacun des {remainingDays} prochains jours</p></div></div><p><Info /> La compensation hebdomadaire ne modifie pas automatiquement les repas déjà enregistrés.</p></section>
           </div>
-        </section> : <FoodDiary date={selectedDate} log={log} currentCalories={calories} setCurrentCalories={setCaloriesInput} updateLog={updateLog} />}
+        </section> : <FoodDiary date={selectedDate} log={log} currentCalories={calories} setCurrentCalories={setCaloriesInput} updateLog={updateLog} onScan={openFoodScanner} />}
       </div>
     </div>
   )
+}
+
+function NutritionMacro({ label, shortLabel, value, tone }: { label: string; shortLabel: string; value: number; tone: string }) {
+  return <div className={`nutrition-macro macro-${tone}`}><span className="nutrition-macro-letter">{shortLabel}</span><div><span>{label}</span><strong>{formatDecimal(value)} <small>g</small></strong></div></div>
 }
 
 function SummaryMetric({ icon, label, value, tone, help, placement = 'center' }: { icon: React.ReactNode; label: string; value: number; tone: string; help: string; placement?: 'left' | 'center' | 'right' }) {

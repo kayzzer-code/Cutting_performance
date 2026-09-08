@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
-import { Activity, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Menu, RotateCcw, Settings, Target, TrendingUp, Utensils, X } from 'lucide-react'
+import { Activity, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Menu, RotateCcw, ScanBarcode, Settings, Target, TrendingUp, Utensils, X } from 'lucide-react'
 import { CuttingPerformanceLogo } from './BrandLogo'
 import { addDays, formatLongDate, isIsoDate, isoDate } from '../domain/dates'
 import type { JournalDateContext } from '../hooks/useJournalDate'
 import { useApp } from '../state/AppContext'
 import { formatDecimal } from '../domain/format'
+import { QuickFoodScanFlow } from './QuickFoodScanFlow'
 
 const navItems = [
   { to: '/aujourdhui', label: 'Aujourd’hui', icon: Home },
@@ -23,19 +24,31 @@ const mobileMore = [navItems[3], navItems[4], navItems[6]]
 export function AppLayout() {
   const { state } = useApp()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [foodScannerOpen, setFoodScannerOpen] = useState(false)
+  const [scanNotice, setScanNotice] = useState('')
+  const noticeTimer = useRef<number | undefined>(undefined)
   const [searchParams, setSearchParams] = useSearchParams()
   const currentDate = isoDate()
   const requestedDate = searchParams.get('date')
   const selectedDate = isIsoDate(requestedDate) && requestedDate <= currentDate ? requestedDate : currentDate
+  const openFoodScanner = useCallback(() => setFoodScannerOpen(true), [])
   const journalContext = useMemo<JournalDateContext>(() => ({
     selectedDate,
+    openFoodScanner,
     dateHref: (path) => {
       const [pathname, query] = path.split('?')
       const params = new URLSearchParams(query)
       if (selectedDate !== currentDate) params.set('date', selectedDate)
       return `${pathname}${params.size ? `?${params}` : ''}`
     },
-  }), [currentDate, selectedDate])
+  }), [currentDate, openFoodScanner, selectedDate])
+
+  function showScanNotice(message: string) {
+    setFoodScannerOpen(false)
+    setScanNotice(message)
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setScanNotice(''), 3200)
+  }
 
   function selectDate(date: string) {
     if (!isIsoDate(date) || date > currentDate) return
@@ -60,7 +73,10 @@ export function AppLayout() {
       </aside>
 
       <main className="main-column">
-        <div className="mobile-brand-bar"><CuttingPerformanceLogo variant="light" /></div>
+        <div className="mobile-brand-bar">
+          <CuttingPerformanceLogo variant="light" />
+          <button className="global-scan-button" type="button" aria-label="Scanner un aliment" onClick={openFoodScanner}><ScanBarcode /><span>Scanner</span></button>
+        </div>
         <header className="journal-date-bar">
           <div className="journal-date-copy"><span>Date du journal</span><strong>{selectedDate === currentDate ? 'Aujourd’hui' : 'Historique'}</strong></div>
           <div className="journal-date-controls">
@@ -100,6 +116,8 @@ export function AppLayout() {
         ))}
         <button className={moreOpen ? 'active' : ''} onClick={() => setMoreOpen(true)}><Menu /><span>Plus</span></button>
       </nav>
+      {foodScannerOpen && <QuickFoodScanFlow date={selectedDate} onClose={() => setFoodScannerOpen(false)} onAdded={showScanNotice} />}
+      {scanNotice && <div className="global-food-toast" role="status"><span><Utensils /></span>{scanNotice}</div>}
     </div>
   )
 }

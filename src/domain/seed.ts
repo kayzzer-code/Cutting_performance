@@ -6,11 +6,12 @@ const upperA: TrainingTemplate = {
   name: 'Upper A · Pectoraux sans poussée',
   shortName: 'Upper A',
   exercises: [
-    { id: 'pec-deck', name: 'Pec deck', target: '4 × 10–15', note: 'Amplitude indolore, tempo contrôlé' },
-    { id: 'cable-fly', name: 'Écarté poulie vis-à-vis', target: '3 × 12–18', note: 'Pas de poussée, omoplates stables' },
+    { id: 'incline-bench-dumbbell-row', name: 'Rowing haltères buste penché sur banc', target: '4 × 8–12' },
     { id: 'pulldown-neutral', name: 'Tirage vertical prise neutre', target: '4 × 8–12' },
-    { id: 'chest-row', name: 'Rowing poitrine appuyée', target: '4 × 10–14' },
-    { id: 'rear-delt', name: 'Oiseau machine', target: '3 × 15–25' },
+    { id: 'dumbbell-fly', name: 'Écarté haltères', target: '4 × 10–15', note: 'Amplitude strictement indolore, sans poussée' },
+    { id: 'cable-fly', name: 'Écarté poulie vis-à-vis', target: '3 × 12–18', note: 'Pas de poussée, omoplates stables' },
+    { id: 'cable-curl', name: 'Curl poulie', target: '3 × 10–15' },
+    { id: 'pushdown', name: 'Extension triceps corde', target: '3 × 10–15' },
   ],
 }
 

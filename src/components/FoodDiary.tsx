@@ -1,11 +1,10 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { Database, Keyboard, LoaderCircle, PackageSearch, Pencil, ScanBarcode, Trash2, Utensils } from 'lucide-react'
-import { calculatePortion, mealPer100, sumMealNutrition, type FoodPer100, type FoodReference } from '../domain/nutrition'
+import { calculatePortion, foodReferenceToMeal, mealPer100, sumMealNutrition, type FoodPer100, type FoodReference } from '../domain/nutrition'
 import type { DailyLog, Meal } from '../domain/types'
 import { formatDecimal, formatNumber } from '../domain/format'
 import { lookupFoodByBarcode, ProductNotFoundError } from '../services/openFoodFacts'
 import { ExplainedLabel } from './HelpTooltip'
-import { BarcodeScannerModal } from './BarcodeScannerModal'
 
 interface FoodDiaryProps {
   date: string
@@ -13,6 +12,7 @@ interface FoodDiaryProps {
   currentCalories: number
   setCurrentCalories: (value: number) => void
   updateLog: (date: string, patch: Partial<DailyLog>) => void
+  onScan: () => void
 }
 
 const slotLabels: Record<NonNullable<Meal['mealSlot']>, string> = {
@@ -30,9 +30,8 @@ const blankPer100 = (): FoodPer100 => ({
   fiberG: null,
 })
 
-export function FoodDiary({ date, log, currentCalories, setCurrentCalories, updateLog }: FoodDiaryProps) {
+export function FoodDiary({ date, log, currentCalories, setCurrentCalories, updateLog, onScan }: FoodDiaryProps) {
   const [barcode, setBarcode] = useState('')
-  const [scannerOpen, setScannerOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -100,29 +99,8 @@ export function FoodDiary({ date, log, currentCalories, setCurrentCalories, upda
       setError('Renseigne au minimum le nom, la quantité et les calories pour 100 g ou 100 ml.')
       return
     }
-    const calculated = calculatePortion(food.per100, quantity)
     const previous = editingId ? log.meals.find((meal) => meal.id === editingId) : undefined
-    const meal: Meal = {
-      id: editingId ?? 'meal-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-      name: food.name.trim(),
-      calories: calculated.calories,
-      proteinG: calculated.proteinG,
-      carbohydratesG: calculated.carbohydratesG,
-      fatG: calculated.fatG,
-      fiberG: calculated.fiberG,
-      quantity,
-      quantityUnit: food.unit,
-      mealSlot,
-      barcode: food.barcode,
-      brand: food.brand,
-      imageUrl: food.imageUrl,
-      source: food.source,
-      caloriesPer100: food.per100.calories,
-      proteinPer100G: food.per100.proteinG ?? undefined,
-      carbohydratesPer100G: food.per100.carbohydratesG ?? undefined,
-      fatPer100G: food.per100.fatG ?? undefined,
-      fiberPer100G: food.per100.fiberG ?? undefined,
-    }
+    const meal = foodReferenceToMeal(food, quantity, mealSlot, editingId ?? 'meal-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7))
     const meals = editingId
       ? log.meals.map((candidate) => candidate.id === editingId ? meal : candidate)
       : [...log.meals, meal]
@@ -150,12 +128,6 @@ export function FoodDiary({ date, log, currentCalories, setCurrentCalories, upda
     } : current)
   }
 
-  function handleDetected(value: string) {
-    setScannerOpen(false)
-    setBarcode(value)
-    void findBarcode(value)
-  }
-
   return <div className="food-diary-layout">
     <section className="food-diary-card reference-card">
       <div className="food-diary-heading">
@@ -163,7 +135,7 @@ export function FoodDiary({ date, log, currentCalories, setCurrentCalories, upda
           <h2><ExplainedLabel help="Somme des aliments détaillés pour cette date. Les calories saisies uniquement dans le mode rapide restent comptées à part." placement="left">Journal alimentaire</ExplainedLabel></h2>
           <p>{formatNumber(totals.calories)} kcal détaillées{nonDetailedCalories > 0 ? ' • ' + formatNumber(nonDetailedCalories) + ' kcal non détaillées' : ''}</p>
         </div>
-        <button className="scan-food-button" type="button" onClick={() => setScannerOpen(true)}><ScanBarcode /> Scanner</button>
+        <button className="scan-food-button" type="button" onClick={onScan}><ScanBarcode /> Scanner</button>
       </div>
 
       <div className="macro-summary-grid" aria-label="Macronutriments détaillés">
@@ -199,7 +171,7 @@ export function FoodDiary({ date, log, currentCalories, setCurrentCalories, upda
     <aside className="food-add-card reference-card">
       <div className="food-add-heading"><span><Database /></span><div><h2>Ajouter un aliment</h2><p>Open Food Facts + saisie manuelle</p></div></div>
       <div className="food-source-actions">
-        <button type="button" className="scan-source-action" onClick={() => setScannerOpen(true)}><ScanBarcode /><span><strong>Scanner le code-barres</strong><small>Avec la caméra du téléphone</small></span></button>
+        <button type="button" className="scan-source-action" onClick={onScan}><ScanBarcode /><span><strong>Scanner le code-barres</strong><small>Avec la caméra du téléphone</small></span></button>
         <form className="barcode-manual-form" onSubmit={(event) => { event.preventDefault(); void findBarcode() }}>
           <label htmlFor="barcode-input">Code-barres</label>
           <div><Keyboard /><input id="barcode-input" aria-label="Code-barres du produit" inputMode="numeric" autoComplete="off" placeholder="Ex. 3017624010701" value={barcode} onChange={(event) => setBarcode(event.target.value.replace(/\D/g, ''))} /><button type="submit" disabled={loading || !barcode}>{loading ? <LoaderCircle className="spin" /> : 'Rechercher'}</button></div>
@@ -238,7 +210,6 @@ export function FoodDiary({ date, log, currentCalories, setCurrentCalories, upda
         <div className="food-editor-actions"><button type="button" onClick={() => { setFood(null); setEditingId(null); setError('') }}>Annuler</button><button type="submit">{editingId ? 'Enregistrer les modifications' : 'Ajouter à la journée'}</button></div>
       </form>}
     </aside>
-    {scannerOpen && <BarcodeScannerModal onClose={() => setScannerOpen(false)} onDetected={handleDetected} />}
   </div>
 }
 

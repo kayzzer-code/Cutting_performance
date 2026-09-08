@@ -70,7 +70,11 @@ export function targetText(e: TemplateExercise) {
   return e.setCount && e.repsMin ? `${e.setCount} × ${e.repsMin}${e.repsMax && e.repsMax !== e.repsMin ? `–${e.repsMax}` : ''}` : e.target || 'Prescription à renseigner'
 }
 export function newLine(def: ExerciseDefinition): TemplateExercise {
-  return { id: uid('line'), exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention, target: '', setCount: 3, repsMin: 10, repsMax: 15, restSeconds: 90 }
+  return {
+    id: uid('line'), exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention,
+    movementFamily: def.movementFamily, muscleContributions: clone(def.muscleContributions ?? []), laterality: def.laterality,
+    target: '', setCount: 3, repsMin: 10, repsMax: 15, restSeconds: def.defaultRestSeconds ?? 90,
+  }
 }
 export function blankSet(): SetLog { return { id: uid('set'), kind: 'work', completed: false } }
 export function startSession(state: AppState, date: string, templateId: string): AppState {
@@ -111,7 +115,10 @@ export function replaceExercise(state: AppState, date: string, lineId: string, d
   let next = changeSession(state, date, s => ({ ...s, exercises: s.exercises.flatMap(e => e.id === lineId ? [{ ...e, replacedById: replacement.id, sets: e.sets.filter(set => set.completed) }, replacement] : [e]) }))
   if (global) {
     const template = next.templates.find(t => t.id === session.templateId)
-    if (template) next = saveTemplate(next, { ...template, exercises: template.exercises.map(e => e.id === original.templateLineId ? { ...e, exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention } : e) }, false)
+    if (template) next = saveTemplate(next, { ...template, exercises: template.exercises.map(e => e.id === original.templateLineId ? {
+      ...e, exerciseId: def.id, name: def.name, equipmentId: def.equipmentId, convention: def.convention,
+      movementFamily: def.movementFamily, muscleContributions: clone(def.muscleContributions ?? []), laterality: def.laterality,
+    } : e) }, false)
   }
   return next
 }
