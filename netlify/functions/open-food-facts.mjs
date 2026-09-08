@@ -2,7 +2,8 @@ const API_ROOT = 'https://world.openfoodfacts.org/api/v3/product'
 const USER_AGENT = 'CUTPerformance/1.0 (https://github.com/kayzzer-code/Cutting_performance)'
 
 export async function handler(event) {
-  const barcode = String(event.queryStringParameters?.barcode ?? '').replace(/\D/g, '')
+  const barcodeFromPath = String(event.path ?? '').match(/(\d{8,14})\/?$/)?.[1]
+  const barcode = String(event.queryStringParameters?.barcode ?? barcodeFromPath ?? '').replace(/\D/g, '')
   if (!/^\d{8,14}$/.test(barcode)) {
     return json(400, { error: 'invalid_barcode' })
   }

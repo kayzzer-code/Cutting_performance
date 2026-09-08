@@ -8,13 +8,27 @@ export async function lookupFoodByBarcode(barcodeInput: string): Promise<FoodRef
   const barcode = barcodeInput.replace(/\D/g, '')
   if (!/^\d{8,14}$/.test(barcode)) throw new Error('Le code-barres doit contenir entre 8 et 14 chiffres.')
   const fields = 'code,product_name,brands,image_front_small_url,serving_size,quantity,product_quantity_unit,nutriments'
-  const response = await fetch(`/api/open-food-facts/${encodeURIComponent(barcode)}?fields=${fields}`)
-  if (response.status === 404) throw new ProductNotFoundError()
-  if (!response.ok) throw new Error('Open Food Facts est momentanément indisponible. Réessaie ou saisis le produit manuellement.')
-  const data: unknown = await response.json()
-  const product = normalizeOpenFoodFactsProduct(data, barcode)
-  if (!product) throw new ProductNotFoundError()
-  return product
+  const encodedFields = encodeURIComponent(fields)
+  const functionUrl = `/.netlify/functions/open-food-facts?barcode=${encodeURIComponent(barcode)}&fields=${encodedFields}`
+  const developmentUrl = `/api/open-food-facts/${encodeURIComponent(barcode)}?fields=${encodedFields}`
+  const directUrl = `https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(barcode)}?fields=${encodedFields}`
+  const endpoints = import.meta.env.PROD ? [functionUrl, directUrl] : [developmentUrl, directUrl]
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { headers: { Accept: 'application/json' } })
+      if (response.status === 404) throw new ProductNotFoundError()
+      if (!response.ok) continue
+      const data: unknown = await response.json()
+      const product = normalizeOpenFoodFactsProduct(data, barcode)
+      if (!product) throw new ProductNotFoundError()
+      return product
+    } catch (cause) {
+      if (cause instanceof ProductNotFoundError) throw cause
+    }
+  }
+
+  throw new Error('Open Food Facts est momentanément indisponible. Réessaie ou saisis le produit manuellement.')
 }
 
 export function normalizeOpenFoodFactsProduct(input: unknown, fallbackBarcode = ''): FoodReference | null {

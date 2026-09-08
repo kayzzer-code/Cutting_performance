@@ -206,6 +206,42 @@ test('le détail nutrition reste utilisable sans caméra ni produit référencé
   await expect(page.locator('.food-entry-calories')).toContainText('180')
 })
 
+test('Open Food Facts prend automatiquement le relais si la route intermédiaire échoue', async ({ page }) => {
+  await page.route('**/api/open-food-facts/3502110008039**', async (route) => {
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'invalid_barcode' }) })
+  })
+  await page.route('https://world.openfoodfacts.org/api/v3/product/3502110008039**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        result: { id: 'product_found' },
+        product: {
+          code: '3502110008039',
+          product_name: 'Pepsi Max',
+          brands: 'Pepsi',
+          product_quantity_unit: 'ml',
+          nutriments: {
+            'energy-kcal_100g': 0.4,
+            proteins_100g: 0,
+            carbohydrates_100g: 0,
+            fat_100g: 0,
+            fiber_100g: 0,
+          },
+        },
+      }),
+    })
+  })
+
+  await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  await page.getByLabel('Code-barres du produit').fill('3502110008039')
+  await page.getByRole('button', { name: 'Rechercher' }).click()
+  await expect(page.getByLabel('Nom de l’aliment')).toHaveValue('Pepsi Max')
+  await expect(page.locator('.food-product-editor')).toContainText('Pepsi')
+})
+
 test('les valeurs de la semaine ouvrent le détail du bon jour', async ({ page }) => {
   await page.goto('/semaine')
   const currentDate = await page.getByLabel('Choisir la date du journal').inputValue()

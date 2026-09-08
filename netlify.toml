@@ -5,7 +5,7 @@
 
 [[redirects]]
   from = "/api/open-food-facts/:barcode"
-  to = "/.netlify/functions/open-food-facts?barcode=:barcode"
+  to = "/.netlify/functions/open-food-facts"
   status = 200
 
 [[redirects]]
