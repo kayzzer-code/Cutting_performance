@@ -34,8 +34,28 @@ Les tests E2E utilisent l’URL définie dans `playwright.config.ts`. Si Vite d�
 
 Le cas de référence Lower (3 200 kcal, 15 000 pas cibles, 29 000 pas totaux, 17 km en 96 min à 90 kg) aboutit à 4 350 kcal avec les coefficients fournis.
 
-## Données
+## Données et synchronisation Supabase
 
-Cette version est un prototype local mono-utilisateur. Les données sont persistées dans `localStorage` sous la clé `cutting-performance-app:v1`. Les données de démonstration sont isolées dans `src/domain/seed.ts` ; les composants ne contiennent pas de valeurs métier figées.
+Sans variables Supabase, l’application continue de fonctionner localement et conserve les données dans `localStorage` sous la clé `cutting-performance-app:v1`.
+
+Avec Supabase, copie `.env.example` vers `.env.local`, puis renseigne uniquement l’URL du projet et sa clé publique/publishable. L’application active alors :
+
+- la création de compte et la connexion par e-mail/mot de passe ;
+- une importation guidée des données locales avec sauvegarde JSON côté serveur ;
+- une synchronisation automatique après chaque modification ;
+- un stockage relationnel séparé pour les objectifs, journées, aliments, activités, séances, exercices et séries ;
+- des règles RLS qui limitent chaque ligne à son propriétaire authentifié.
+
+La migration initiale se trouve dans `supabase/migrations`. Pour un nouveau projet lié :
+
+```bash
+pnpm exec supabase link --project-ref YOUR_PROJECT_REF
+pnpm exec supabase db push
+pnpm exec supabase gen types typescript --linked > src/domain/database.types.ts
+```
+
+Ne jamais ajouter une clé `service_role` aux variables Vite ou Netlify : elle contourne les règles RLS.
+
+Les données de démonstration sont isolées dans `src/domain/seed.ts` ; les composants ne contiennent pas de valeurs métier figées.
 
 La cartographie entre les huit mockups, les routes et les actions se trouve dans `docs/functional-mapping.md`.

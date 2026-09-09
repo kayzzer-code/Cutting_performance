@@ -3,6 +3,7 @@ import { Link, NavLink, useBlocker } from 'react-router-dom'
 import { BicepsFlexed, Dumbbell, LibraryBig, Moon, X } from 'lucide-react'
 import { useJournalDate } from '../../hooks/useJournalDate'
 import { useApp } from '../../state/AppContext'
+import { useCloudSync } from '../../state/CloudSyncContext'
 import { Button, Field, SelectField } from '../ui'
 import { conventionLabels, dayLabels, normalized, trainingLog, uid } from '../../domain/training'
 import { calculateDay } from '../../domain/calculations'
@@ -14,9 +15,10 @@ import type { AppState, DayType, ExerciseDefinition, LoadConvention, MuscleGroup
 export function SessionsShell({ children }: { children: ReactNode }) {
   const { dateHref } = useJournalDate()
   const { storageStatus } = useApp()
+  const cloud = useCloudSync()
   return <section className="sessions-page"><nav className="session-tabs" aria-label="Onglets séances">
     <NavLink to={dateHref('/seances')} end>Mes séances</NavLink><NavLink to={dateHref('/seances/exercices')}><LibraryBig aria-hidden="true" /> Exercices</NavLink><NavLink to={dateHref('/seances/planning')}>Planning</NavLink><NavLink to={dateHref('/seances/statistiques')}>Statistiques</NavLink><Link className="journal-shortcut" to={dateHref('/seances/journal')}>Journal du jour</Link>
-  </nav><div className="session-save-status" role="status">{storageStatus}</div>{children}</section>
+  </nav><div className="session-save-status" role="status">{cloud.status === 'local' ? storageStatus : cloud.label}</div>{children}</section>
 }
 export function DayIcon({ type }: { type: DayType }) {
   const Icon = type === 'rest' ? Moon : type === 'shoulders-arms' ? BicepsFlexed : Dumbbell

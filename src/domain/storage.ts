@@ -2,11 +2,12 @@ import { createInitialState } from './seed'
 import { isIsoDate, isoDate } from './dates'
 import { clone, planFor } from './training'
 import { mergeExerciseCatalogue } from './exerciseCatalogue'
-import type { AppState, ExerciseDefinition, TemplateExercise } from './types'
+import { goalFromProfile } from './objectives'
+import type { AppState, ExerciseDefinition, FitnessGoal, TemplateExercise } from './types'
 
 export const STORAGE_KEY = 'cutting-performance-app:v1'
-export const BACKUP_KEY = `${STORAGE_KEY}:backup-before-v5`
-const CURRENT_SCHEMA_VERSION = 5
+export const BACKUP_KEY = `${STORAGE_KEY}:backup-before-v6`
+const CURRENT_SCHEMA_VERSION = 6
 const legacyTypes = { 'upper-a': 'upper', 'upper-b': 'upper', 'lower-a': 'lower', 'lower-b': 'lower', 'shoulders-arms': 'shoulders-arms' } as const
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`Données locales invalides : ${message}`) }
@@ -14,7 +15,7 @@ function assert(condition: unknown, message: string): asserts condition { if (!c
 export function migrateState(input: unknown): AppState {
   assert(record(input), 'état absent')
   const sourceSchemaVersion = Number(input.schemaVersion)
-  assert([1, 2, 3, 4, 5].includes(sourceSchemaVersion), 'version non prise en charge')
+  assert([1, 2, 3, 4, 5, 6].includes(sourceSchemaVersion), 'version non prise en charge')
   assert(record(input.logs) && record(input.schedule) && record(input.profile) && record(input.settings) && Array.isArray(input.templates), 'structure du journal')
   for (const template of input.templates) {
     assert(record(template) && typeof template.id === 'string' && typeof template.name === 'string' && Array.isArray(template.exercises), 'modèle de séance')
@@ -65,6 +66,21 @@ export function migrateState(input: unknown): AppState {
   const state = clone(input) as unknown as AppState
   state.profile = { ...initial.profile, ...state.profile }
   state.settings = { ...initial.settings, ...state.settings, dayTypePlans: { ...initial.settings.dayTypePlans, ...state.settings.dayTypePlans } }
+  if (!Array.isArray(state.goals) || state.goals.length === 0) {
+    const initialGoal = goalFromProfile(state.profile, state)
+    state.goals = [initialGoal]
+    state.activeGoalId = initialGoal.id
+  }
+  const goalTypes = ['fat-loss', 'lean-gain', 'maintenance', 'strength', 'endurance', 'event']
+  const goalStatuses = ['active', 'completed', 'cancelled']
+  for (const goal of state.goals) {
+    assert(typeof goal.id === 'string' && typeof goal.name === 'string', 'identité d’objectif')
+    assert(goalTypes.includes(goal.type) && goalStatuses.includes(goal.status), 'type ou statut d’objectif')
+    assert(isIsoDate(goal.startDate) && (goal.targetDate === undefined || isIsoDate(goal.targetDate)) && (goal.endedAt === undefined || isIsoDate(goal.endedAt)), 'dates d’objectif')
+    for (const field of ['referenceWeightKg', 'targetWeightKg', 'referenceBodyFatPercent', 'heightCm', 'targetWeightChangeKgPerWeek'] as (keyof FitnessGoal)[]) assert(typeof goal[field] === 'number' && Number.isFinite(goal[field] as number), `objectif ${field}`)
+    assert(Array.isArray(goal.priorities), 'priorités d’objectif')
+  }
+  if (state.activeGoalId && !state.goals.some(goal => goal.id === state.activeGoalId && goal.status === 'active')) state.activeGoalId = state.goals.find(goal => goal.status === 'active')?.id
   for (const value of Object.values(state.profile)) assert(typeof value !== 'number' || Number.isFinite(value), 'profil')
   for (const plan of Object.values(state.settings.dayTypePlans)) assert(record(plan) && typeof plan.calories === 'number' && Number.isFinite(plan.calories) && typeof plan.steps === 'number' && Number.isFinite(plan.steps), 'plan calorique')
   if (state.schemaVersion >= 3) {

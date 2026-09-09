@@ -9,6 +9,7 @@ interface AppContextValue {
   state: AppState
   storageStatus: string
   transact: (update: (state: AppState) => AppState) => boolean
+  replaceState: (state: AppState, status?: string) => void
   updateProfile: (profile: Partial<Profile>) => void
   updateSettings: (settings: Partial<CalculationSettings>) => void
   applyConfiguration: (profile: Profile, settings: CalculationSettings) => void
@@ -60,6 +61,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (cause) { setError(String(cause)); setStorageStatus(unsaved.current ? 'Échec de sauvegarde — données conservées en mémoire' : 'Action non enregistrée'); return false }
   }, [conflict])
 
+  const replaceState = useCallback((value: AppState, status = 'Données cloud chargées') => {
+    const next = migrateState(value)
+    const serialized = JSON.stringify(next)
+    localStorage.setItem(STORAGE_KEY, serialized)
+    current.current = next
+    lastRaw.current = serialized
+    unsaved.current = false
+    renderState(next)
+    setConflict(false)
+    setError('')
+    setStorageStatus(status)
+  }, [])
+
   useEffect(() => {
     function changed(event: StorageEvent) {
       if (event.key !== STORAGE_KEY || event.newValue === lastRaw.current) return
@@ -78,10 +92,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateLog = (date: string, patch: Partial<DailyLog>) => { transact(s => ({ ...s, logs: { ...s.logs, [date]: { ...trainingLog(s, date), ...patch } } })) }
   if (!state) return <main className="storage-recovery"><h1>Ton journal est protégé</h1><p>Le stockage n’a pas pu être ouvert. Aucune donnée existante n’a été effacée.</p><pre>{error}</pre><button onClick={() => exportLocalData(localStorage.getItem(STORAGE_KEY) ?? '')}>Exporter les données brutes</button><button onClick={() => window.location.reload()}>Réessayer</button><p>Une sauvegarde antérieure peut être disponible sous la clé {BACKUP_KEY}.</p></main>
   const value: AppContextValue = {
-    state, transact, storageStatus,
+    state, transact, replaceState, storageStatus,
     updateProfile: patch => { transact(s => ({ ...s, profile: { ...s.profile, ...patch } })) },
     updateSettings: patch => { transact(s => ({ ...s, settings: { ...s.settings, ...patch } })) },
-    applyConfiguration: (profile, settings) => { transact(s => reconfigureState(s, profile, settings)) },
+    applyConfiguration: (profile, settings) => { transact(s => {
+      const configured = reconfigureState(s, profile, settings)
+      if (!s.activeGoalId) return configured
+      return { ...configured, goals: configured.goals.map(goal => goal.id === s.activeGoalId ? {
+        ...goal,
+        referenceWeightKg: profile.referenceWeightKg,
+        targetWeightKg: profile.targetWeightKg,
+        referenceBodyFatPercent: profile.bodyFatPercent,
+        heightCm: profile.heightCm,
+        trainingLevel: profile.trainingLevel,
+        targetWeightChangeKgPerWeek: -profile.weeklyLossTargetKg,
+      } : goal) }
+    }) },
     updateLog,
     addActivity: (date, activity) => { transact(s => { const log = trainingLog(s, date); return { ...s, logs: { ...s.logs, [date]: { ...log, activities: [...log.activities, { ...activity, id: uid('activity'), date }] } } } }) },
     removeActivity: (date, id) => { transact(s => { const log = trainingLog(s, date); return { ...s, logs: { ...s.logs, [date]: { ...log, activities: log.activities.filter(a => a.id !== id) } } } }) },

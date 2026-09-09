@@ -1,34 +1,39 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
-import { Activity, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Menu, RotateCcw, ScanBarcode, Settings, Target, TrendingUp, Utensils, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cloud, Dumbbell, Home, LogOut, Menu, RotateCcw, ScanBarcode, Target, TrendingUp, Utensils, X } from 'lucide-react'
 import { CuttingPerformanceLogo } from './BrandLogo'
 import { addDays, formatLongDate, isIsoDate, isoDate } from '../domain/dates'
 import type { JournalDateContext } from '../hooks/useJournalDate'
 import { useApp } from '../state/AppContext'
 import { formatDecimal } from '../domain/format'
 import { QuickFoodScanFlow } from './QuickFoodScanFlow'
+import { goalTypeLabels } from '../domain/objectives'
+import { useAuth } from '../state/AuthContext'
+import { useCloudSync } from '../state/CloudSyncContext'
 
 const navItems = [
   { to: '/aujourdhui', label: 'Aujourd’hui', icon: Home },
-  { to: '/activites', label: 'Activités', icon: Activity },
   { to: '/nutrition', label: 'Nutrition', icon: Utensils },
   { to: '/semaine', label: 'Semaine', icon: CalendarDays },
   { to: '/progression', label: 'Progression', icon: TrendingUp },
   { to: '/seances', label: 'Séances', icon: Dumbbell },
-  { to: '/parametres', label: 'Paramètres', icon: Settings },
+  { to: '/objectifs', label: 'Objectifs', icon: Target },
 ]
 
-const mobilePrimary = [navItems[0], navItems[1], navItems[2], navItems[5]]
-const mobileMore = [navItems[3], navItems[4], navItems[6]]
+const mobilePrimary = [navItems[0], navItems[1], navItems[4]]
+const mobileMore = [navItems[2], navItems[3], navItems[5]]
 
 export function AppLayout() {
   const { state } = useApp()
+  const auth = useAuth()
+  const cloud = useCloudSync()
   const [moreOpen, setMoreOpen] = useState(false)
   const [foodScannerOpen, setFoodScannerOpen] = useState(false)
   const [scanNotice, setScanNotice] = useState('')
   const noticeTimer = useRef<number | undefined>(undefined)
   const [searchParams, setSearchParams] = useSearchParams()
   const currentDate = isoDate()
+  const activeGoal = state.goals.find(goal => goal.id === state.activeGoalId && goal.status === 'active')
   const requestedDate = searchParams.get('date')
   const selectedDate = isIsoDate(requestedDate) && requestedDate <= currentDate ? requestedDate : currentDate
   const openFoodScanner = useCallback(() => setFoodScannerOpen(true), [])
@@ -70,6 +75,7 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
+        {auth.configured && <div className="sidebar-account"><span className={`cloud-status ${cloud.status}`}><Cloud /> {cloud.label}</span><small>{auth.user?.email}</small><button type="button" onClick={() => void auth.signOut()}><LogOut /> Se déconnecter</button></div>}
       </aside>
 
       <main className="main-column">
@@ -90,7 +96,7 @@ export function AppLayout() {
             <button type="button" className="date-arrow" aria-label="Jour suivant" disabled={selectedDate >= currentDate} onClick={() => selectDate(addDays(selectedDate, 1))}><ChevronRight /></button>
           </div>
           {selectedDate !== currentDate && <button type="button" className="return-today" onClick={() => selectDate(currentDate)}><RotateCcw /> Revenir à aujourd’hui</button>}
-          <div className="journal-goal"><Target /> Objectif : −{formatDecimal(state.profile.weeklyLossTargetKg)} kg / semaine</div>
+          <div className="journal-goal"><Target /> {activeGoal ? activeGoal.type === 'fat-loss' ? `Objectif : −${formatDecimal(Math.abs(activeGoal.targetWeightChangeKgPerWeek))} kg / semaine` : activeGoal.type === 'lean-gain' ? `Objectif : +${formatDecimal(Math.abs(activeGoal.targetWeightChangeKgPerWeek))} kg / semaine` : goalTypeLabels[activeGoal.type] : 'Aucun objectif actif'}</div>
         </header>
         <div className="page-content" key={selectedDate}><Outlet context={journalContext} /></div>
       </main>
@@ -104,6 +110,7 @@ export function AppLayout() {
                 {Icon && <Icon size={22} />}<span>{label}</span><ChevronRight size={18} />
               </NavLink>
             ))}
+            {auth.configured && <button className="mobile-sign-out" type="button" onClick={() => void auth.signOut()}><LogOut size={22}/><span>Se déconnecter</span><ChevronRight size={18}/></button>}
           </div>
         </div>
       )}

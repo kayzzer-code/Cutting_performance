@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BicepsFlexed, Bike, Crosshair, Footprints, Plus, SportShoe, Utensils } from 'lucide-react'
+import { BicepsFlexed, Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Crosshair, Footprints, Orbit, Plus, SportShoe, Utensils, Waves, X } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { calculateDay, calculateWeeklyMargin, rollingAverage } from '../domain/calculations'
 import { formatDayName, weekDates } from '../domain/dates'
@@ -9,10 +10,13 @@ import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
 import { ExplainedLabel } from '../components/HelpTooltip'
 import { dayLabels, templateForDate } from '../domain/training'
+import { QuickActivityEditor, type QuickActivityEditorType } from '../components/QuickActivityEditor'
 
 export function TodayPage() {
   const { state } = useApp()
   const { selectedDate, dateHref } = useJournalDate()
+  const [cardioPickerOpen, setCardioPickerOpen] = useState(false)
+  const [activityEditor, setActivityEditor] = useState<QuickActivityEditorType | null>(null)
   const log = journalLogForDate(state, selectedDate)
   const calc = calculateDay(log, state.profile, state.settings)
   const weekLogs = weekDates(selectedDate).map((date) => journalLogForDate(state, date))
@@ -31,6 +35,9 @@ export function TodayPage() {
     || log.strengthActivity.dayType !== log.strengthActivity.plannedDayType
     || Boolean(log.strengthActivity.templateId && log.strengthActivity.templateId !== template?.id)
   ))
+  const sessionHref = log.training || (template && !sessionWasChanged)
+    ? dateHref('/seances/journal')
+    : dateHref('/activites?focus=strength')
   const runs = log.activities.filter((activity) => activity.type === 'running')
   const runMinutes = runs.reduce((sum, activity) => sum + activity.durationMin, 0)
   const runDistance = runs.reduce((sum, activity) => sum + (activity.distanceKm ?? 0), 0)
@@ -54,16 +61,17 @@ export function TodayPage() {
     <div className="reference-page today-reference">
       <div className="reference-body today-body">
         <section className="today-hero-grid">
-          <Link to={dateHref('/parametres')} className="target-hero-card reference-card">
+          <Link to={dateHref('/objectifs')} className="target-hero-card reference-card">
             <span className="hero-icon-circle teal"><Crosshair /></span>
             <div><ExplainedLabel help="Apport calorique recommandé pour cette date après prise en compte du type de journée, de l’activité prévue et de l’activité réellement saisie." placement="left">Cible du jour recalculée</ExplainedLabel><strong>{formatNumber(calc.adjustedCalorieTarget)} <small>kcal</small></strong></div>
           </Link>
 
-          <div className="daily-summary-card reference-card">
-            <Link to={dateHref(sessionWasChanged ? '/activites' : '/musculation')} className="daily-summary-item"><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={sessionWasChanged ? `Le planning prévoyait ${template?.shortName ?? dayLabels[log.strengthActivity!.plannedDayType]}, mais ${actualSessionLabel} a été déclaré comme réalité. Clique pour modifier cette déclaration.` : template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance.` : 'Aucune séance de musculation n’est planifiée pour cette journée.'} placement="left">Séance :</ExplainedLabel><strong>{actualSessionLabel}</strong></Link>
-            <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><SportShoe /></span><ExplainedLabel help="Nombre de pas de marche et de déplacement, sans les pas estimés pendant la course afin d’éviter le double comptage.">Pas hors course :</ExplainedLabel><strong>{log.totalSteps === undefined ? 'Non renseigné' : formatNumber(calc.walkingSteps)}</strong></Link>
-            <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong></Link>
-            <Link to={dateHref('/activites')} className="daily-summary-item"><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée et puissance moyenne enregistrées. Les watts, le poids et la durée déterminent l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${formatDuration(bikeMinutes)}${bikeAverageWatts ? ` • ${bikeAverageWatts} W` : ''}` : 'Non renseigné'}</strong></Link>
+          <div className="daily-summary-card day-activity-grid reference-card">
+            <Link to={sessionHref} className="daily-summary-item" aria-label={`${actualSessionLabel} — ouvrir la séance`}><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={sessionWasChanged ? `Le planning prévoyait ${template?.shortName ?? dayLabels[log.strengthActivity!.plannedDayType]}, mais ${actualSessionLabel} a été déclaré comme réalité. Clique pour modifier cette déclaration.` : template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance et la démarrer.` : 'Aucune séance de musculation n’est planifiée. Clique pour déclarer une séance imprévue.'} placement="left">Séance :</ExplainedLabel><strong>{actualSessionLabel}</strong></Link>
+            <button type="button" className="daily-summary-item steps-summary-item" aria-label="Renseigner les pas hors course" onClick={() => setActivityEditor('steps')}><span className="hero-icon-circle teal"><SportShoe /></span><ExplainedLabel help="Nombre de pas de marche et de déplacement comparé à l’objectif de la journée, sans les pas estimés pendant la course afin d’éviter le double comptage.">Pas hors course :</ExplainedLabel><strong className="steps-summary-value"><b>{formatNumber(log.totalSteps === undefined ? 0 : calc.walkingSteps)}</b><small>/ {formatNumber(calc.targetSteps)}</small></strong><span className="activity-target-caption">réalisés / cible</span></button>
+            <button type="button" className="daily-summary-item" aria-label="Renseigner une course" onClick={() => setActivityEditor('running')}><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong></button>
+            <button type="button" className="daily-summary-item" aria-label="Renseigner une sortie vélo" onClick={() => setActivityEditor('cycling')}><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée et puissance moyenne enregistrées. Les watts, le poids et la durée déterminent l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${formatDuration(bikeMinutes)}${bikeAverageWatts ? ` • ${bikeAverageWatts} W` : ''}` : 'Non renseigné'}</strong></button>
+            <button type="button" className="daily-summary-item add-cardio-item" aria-label="Ajouter un autre cardio" onClick={() => setCardioPickerOpen(true)}><span className="hero-icon-circle blue"><Plus /></span><span>Autre cardio</span><strong>Ajouter</strong></button>
           </div>
         </section>
 
@@ -110,12 +118,35 @@ export function TodayPage() {
         </section>
 
         <section className="today-actions">
-          <Link to={dateHref('/activites')} className="reference-action teal-action"><Plus /><span>Ajouter une activité</span></Link>
+          <button type="button" className="reference-action teal-action" onClick={() => setCardioPickerOpen(true)}><Plus /><span>Ajouter un autre cardio</span></button>
           <Link to={dateHref('/nutrition')} className="reference-action blue-action"><Utensils /><span>Saisir mes calories</span></Link>
         </section>
       </div>
+
+      {cardioPickerOpen && <div className="day-cardio-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCardioPickerOpen(false) }}>
+        <section className="day-cardio-picker" role="dialog" aria-modal="true" aria-labelledby="day-cardio-title">
+          <header><div><span>Activité supplémentaire</span><h2 id="day-cardio-title">Quel cardio as-tu fait ?</h2><p>Choisis une activité pour renseigner sa durée et calculer sa dépense.</p></div><button type="button" aria-label="Fermer les choix de cardio" onClick={() => setCardioPickerOpen(false)}><X /></button></header>
+          <div className="day-cardio-choices">
+            <CardioChoice onClick={() => openActivityEditor('jump-rope')} icon={<Cable />} title="Corde à sauter" description="Durée et dépense estimée" tone="teal" />
+            <CardioChoice onClick={() => openActivityEditor('stair-climber')} icon={<ChartNoAxesColumnIncreasing />} title="StairMaster" description="Durée, niveau et cadence" tone="blue" />
+            <CardioChoice onClick={() => openActivityEditor('rowing')} icon={<Waves />} title="Rameur" description="Durée du cardio" tone="navy" />
+            <CardioChoice onClick={() => openActivityEditor('elliptical')} icon={<Orbit />} title="Elliptique" description="Durée du cardio" tone="teal" />
+            <CardioChoice onClick={() => openActivityEditor('other')} icon={<CircleEllipsis />} title="Autre cardio" description="Une activité libre" tone="blue" />
+          </div>
+        </section>
+      </div>}
+      {activityEditor && <QuickActivityEditor key={activityEditor} date={selectedDate} type={activityEditor} onClose={() => setActivityEditor(null)} />}
     </div>
   )
+
+  function openActivityEditor(type: QuickActivityEditorType) {
+    setCardioPickerOpen(false)
+    setActivityEditor(type)
+  }
+}
+
+function CardioChoice({ onClick, icon, title, description, tone }: { onClick: () => void; icon: React.ReactNode; title: string; description: string; tone: string }) {
+  return <button type="button" className={`day-cardio-choice ${tone}`} onClick={onClick}><span>{icon}</span><div><strong>{title}</strong><small>{description}</small></div></button>
 }
 
 function EquationPart({ label, value, signed = false, help, placement = 'center' }: { label: string; value: number; signed?: boolean; help: string; placement?: 'left' | 'center' | 'right' }) {

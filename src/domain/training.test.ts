@@ -31,7 +31,7 @@ describe('migration et sauvegarde récupérable', () => {
   it('sauvegarde le JSON brut avant la migration, et ne le remplace pas si la sauvegarde échoue', () => {
     const raw = JSON.stringify(createInitialState(date)); const map = new Map([[STORAGE_KEY, raw]])
     const storage = { getItem: (key: string) => map.get(key) ?? null, setItem: (key: string, value: string) => { map.set(key, value) } }
-    expect(loadStoredState(storage).state.schemaVersion).toBe(5)
+    expect(loadStoredState(storage).state.schemaVersion).toBe(6)
     expect(map.get(BACKUP_KEY)).toBe(raw)
     loadStoredState(storage)
     expect(map.get(BACKUP_KEY)).toBe(raw)

@@ -10,11 +10,82 @@ test('navigation principale et écrans dynamiques', async ({ page }) => {
   await expect(page.getByText('Cible du jour recalculée', { exact: true })).toBeVisible()
   await expect(page.locator('.equation-card')).toContainText('Activité supplémentaire')
 
-  const routes = ['activites', 'nutrition', 'semaine', 'progression', 'musculation', 'parametres']
+  const routes = ['activites', 'nutrition', 'semaine', 'progression', 'musculation', 'objectifs']
   for (const route of routes) {
     await page.goto(`/${route}`)
     await expect(page.locator('h1')).toBeVisible()
   }
+})
+
+test('un nouvel objectif archive le cycle actif et adapte sa configuration', async ({ page }) => {
+  await page.goto('/objectifs')
+  await expect(page.locator('h1')).toHaveText('Objectifs')
+  await expect(page.locator('.objective-hero')).toContainText('Sèche vers 80 kg')
+  await page.getByRole('button', { name: 'Nouvel objectif' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Créer un nouvel objectif' })
+  await dialog.getByRole('button', { name: /Prise de masse contrôlée/ }).click()
+  await expect(dialog.getByText('Gain visé')).toBeVisible()
+  await dialog.getByLabel('Nom de l’objectif').fill('Lean bulk 80 → 83 kg')
+  const targetWeight = dialog.getByText('Poids cible').locator('..').getByRole('spinbutton')
+  await targetWeight.fill('83')
+  page.once('dialog', confirmation => confirmation.accept())
+  await dialog.getByRole('button', { name: 'Archiver et démarrer' }).click()
+  await expect(page.locator('.objective-hero')).toContainText('Lean bulk 80 → 83 kg')
+  await expect(page.locator('.goal-history-grid')).toContainText('Sèche vers 80 kg')
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('cutting-performance-app:v1')!))
+  expect(stored.goals).toHaveLength(2)
+  expect(stored.goals.find((goal: { id: string }) => goal.id === stored.activeGoalId)).toMatchObject({ type: 'lean-gain', targetWeightKg: 83, status: 'active' })
+})
+
+test('Jour centralise la saisie des activités et masque l’ancien onglet Activités', async ({ page }) => {
+  await page.goto('/aujourdhui')
+  await expect(page.locator('.desktop-nav')).not.toContainText('Activités')
+  await expect(page.locator('.mobile-nav')).not.toContainText('Activités')
+  await expect(page.locator('.day-activity-grid > *')).toHaveCount(5)
+  await expect(page.getByLabel(/ouvrir la séance/)).toHaveAttribute('href', /\/seances\/journal/)
+  await expect(page.getByLabel('Renseigner les pas hors course')).toContainText(/0.*\/.*\d+.*réalisés \/ cible/)
+
+  await page.getByLabel('Renseigner les pas hors course').click()
+  const stepsDialog = page.getByRole('dialog', { name: 'Pas hors course' })
+  await expect(stepsDialog).toBeVisible()
+  await expect(stepsDialog.locator('.step-goal-card')).toContainText(/0.*sur.*pas/)
+  await stepsDialog.getByLabel('Pas hors course réalisés').fill('20000')
+  await expect(stepsDialog.locator('.step-goal-card')).toContainText('20 000')
+  await expect(stepsDialog).toContainText('Enregistré automatiquement')
+  const selectedDate = await page.getByLabel('Choisir la date du journal').inputValue()
+  expect(await page.evaluate((date) => JSON.parse(localStorage.getItem('cutting-performance-app:v1')!).logs[date].totalSteps, selectedDate)).toBe(20000)
+  await stepsDialog.getByRole('button', { name: 'Fermer la saisie d’activité' }).click()
+  await expect(page.getByLabel('Renseigner les pas hors course')).toContainText('20 000')
+
+  await page.getByLabel('Renseigner une course').click()
+  const runDialog = page.getByRole('dialog', { name: 'Course à pied' })
+  await runDialog.getByLabel('Durée de course').fill('60')
+  await runDialog.getByLabel('Distance de course').fill('10')
+  await expect(runDialog).toContainText('6:00 / km')
+  await runDialog.getByRole('button', { name: 'Fermer la saisie d’activité' }).click()
+  await expect(page.getByLabel('Renseigner une course')).toContainText('1 h • 10,0 km')
+  await expect(page.getByLabel('Renseigner les pas hors course')).toContainText('20 000')
+
+  await page.getByLabel('Renseigner une sortie vélo').click()
+  const bikeDialog = page.getByRole('dialog', { name: 'Vélo' })
+  await bikeDialog.getByLabel('Durée vélo').fill('45')
+  await bikeDialog.getByLabel('Watts moyens').fill('180')
+  await expect(bikeDialog).toContainText('Enregistré automatiquement')
+  await bikeDialog.getByRole('button', { name: 'Fermer la saisie d’activité' }).click()
+  await expect(page.getByLabel('Renseigner une sortie vélo')).toContainText('45 min • 180 W')
+
+  await page.getByLabel('Ajouter un autre cardio').first().click()
+  await expect(page.getByRole('dialog', { name: 'Quel cardio as-tu fait ?' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Corde à sauter/ })).toBeVisible()
+  await page.getByRole('button', { name: /StairMaster/ }).click()
+  const stairDialog = page.getByRole('dialog', { name: 'StairMaster' })
+  await stairDialog.getByLabel('Durée').fill('6')
+  await stairDialog.getByLabel('Secondes').fill('30')
+  await expect(stairDialog).toContainText('78 marches/min')
+  const activities = await page.evaluate((date) => JSON.parse(localStorage.getItem('cutting-performance-app:v1')!).logs[date].activities, selectedDate)
+  expect(activities.find((activity: { type: string }) => activity.type === 'running')).toMatchObject({ durationMin: 60, distanceKm: 10 })
+  expect(activities.find((activity: { type: string }) => activity.type === 'cycling')).toMatchObject({ durationMin: 45, averageWatts: 180 })
+  expect(activities.find((activity: { type: string }) => activity.type === 'stair-climber')).toMatchObject({ durationMin: 6.5, level: 10 })
 })
 
 test('une activité ajuste la cible, évite le double comptage et persiste', async ({ page }) => {
@@ -114,6 +185,7 @@ test('une séance imprévue adapte la journée sans modifier le planning', async
 
 test('la nutrition enregistrée alimente le bilan de la semaine', async ({ page }) => {
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('2750')
   await page.getByRole('button', { name: /Enregistrer 2.?750 kcal/ }).click()
   await expect(page.getByText(/Calories enregistrées/)).toBeVisible()
@@ -146,7 +218,10 @@ test('un produit scanné calcule les macros, alimente le total puis reste modifi
     })
   })
   await page.goto('/nutrition')
-  await page.getByRole('button', { name: 'Aliments & macros' }).click()
+  const nutritionModes = page.locator('.nutrition-mode-tabs button')
+  await expect(nutritionModes).toHaveText(['Aliments & macros', 'Saisie rapide'])
+  await expect(page.getByRole('button', { name: 'Aliments & macros' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Journal alimentaire', { exact: true })).toBeVisible()
   await page.getByLabel('Code-barres du produit').fill('3560070973570')
   await page.getByRole('button', { name: 'Rechercher' }).click()
   await expect(page.getByLabel('Nom de l’aliment')).toHaveValue('Petits pois extra-fins')
@@ -161,7 +236,6 @@ test('un produit scanné calcule les macros, alimente le total puis reste modifi
   await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('203')
   await page.reload()
-  await page.getByRole('button', { name: 'Aliments & macros' }).click()
   await expect(page.getByText('Petits pois extra-fins', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Modifier Petits pois extra-fins' }).click()
@@ -241,11 +315,12 @@ test('le scanner global guide les codes invalides et bloque une fiche sans calor
   await page.goto('/nutrition')
   await page.locator('.nutrition-mobile-scan').click()
   await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
-  await page.getByLabel('Code-barres du produit').fill('123')
+  const scannerDialog = page.locator('.quick-food-modal')
+  await scannerDialog.getByLabel('Code-barres du produit').fill('123')
   await page.getByRole('button', { name: 'Rechercher le produit' }).click()
   await expect(page.getByRole('alert')).toContainText('entre 8 et 14 chiffres')
 
-  await page.getByLabel('Code-barres du produit').fill('1234567890124')
+  await scannerDialog.getByLabel('Code-barres du produit').fill('1234567890124')
   await page.getByRole('button', { name: 'Rechercher le produit' }).click()
   await expect(page.getByRole('dialog', { name: 'Produit incomplet' })).toContainText('Les calories sont absentes')
   await expect(page.getByRole('button', { name: 'Ajouter à la journée' })).toBeDisabled()
@@ -338,25 +413,27 @@ test('les valeurs de la semaine ouvrent le détail du bon jour', async ({ page }
   await page.getByRole('link', { name: `Saisir les calories réelles du ${historicalLabel}` }).click()
   await expect(page).toHaveURL(new RegExp(`/nutrition\\?date=${historicalDate}`))
   await expect(page.getByLabel('Choisir la date du journal')).toHaveValue(historicalDate)
+  await expect(page.getByRole('button', { name: 'Aliments & macros' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toBeVisible()
 })
 
-test('le profil recalcule le plan et les coefficients techniques restent verrouillés', async ({ page }) => {
-  await page.goto('/parametres')
-  await expect(page.getByLabel('Marche')).toHaveAttribute('readonly', '')
-  await expect(page.getByLabel('Course')).toHaveAttribute('readonly', '')
-  await expect(page.getByLabel('Cadence estimée')).toHaveAttribute('readonly', '')
+test('l’objectif recalcule le plan et les coefficients techniques restent verrouillés', async ({ page }) => {
+  await page.goto('/objectifs')
+  await page.locator('.objective-calculation-card summary').click()
+  await expect(page.locator('.locked-coefficients')).toContainText('Marche')
+  await expect(page.locator('.locked-coefficients')).toContainText('Course')
 
-  await page.getByLabel('Masse grasse estimée').fill('25')
+  await page.getByLabel('Masse grasse de départ').fill('25')
   await page.getByLabel('Perte visée').fill('1')
   await expect(page.getByLabel('Calories Upper')).toHaveValue('2850')
   await expect(page.getByLabel('Calories Épaules–Bras')).toHaveValue('2650')
   await expect(page.getByText(/Rythme agressif/)).toBeVisible()
 
-  await page.getByRole('button', { name: 'Enregistrer les paramètres' }).click()
-  await expect(page.getByText('Paramètres enregistrés.')).toBeVisible()
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await expect(page.getByText('Objectif et calculs enregistrés.')).toBeVisible()
   await page.reload()
-  await expect(page.getByLabel('Masse grasse estimée')).toHaveValue('25')
+  await expect(page.getByLabel('Masse grasse de départ')).toHaveValue('25')
   await expect(page.getByLabel('Perte visée')).toHaveValue('1')
 })
 
@@ -378,10 +455,11 @@ test('une séance peut être démarrée, terminée partiellement puis corrigée 
 
 test('la remise à zéro efface le journal et relance le paramétrage', async ({ page }) => {
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('2750')
   await page.getByRole('button', { name: /Enregistrer 2.?750 kcal/ }).click()
 
-  await page.goto('/parametres')
+  await page.goto('/objectifs')
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Effacer mes données et recommencer' }).click()
   await expect(page).toHaveURL(/\/onboarding\/objectif$/)
@@ -412,21 +490,26 @@ test('la date du header permet de saisir et retrouver une journée historique', 
 
   await page.getByRole('link', { name: /Saisir mes calories/ }).click()
   await expect(page).toHaveURL(new RegExp(`/nutrition\\?date=${historicalDate}`))
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('2450')
   await page.getByRole('button', { name: /Enregistrer 2.?450 kcal/ }).click()
 
   await page.getByRole('button', { name: 'Revenir à aujourd’hui' }).click()
   await expect(dateInput).toHaveValue(currentDate)
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('0')
 
-  await dateInput.fill(historicalDate)
+  await page.goto(`/nutrition?date=${historicalDate}`)
+  await page.getByRole('button', { name: 'Saisie rapide', exact: true }).click()
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toHaveValue('2450')
 
-  const activityLink = isMobile
-    ? page.locator('.mobile-nav').getByRole('link', { name: 'Activités' })
-    : page.locator('.desktop-nav').getByRole('link', { name: 'Activités' })
-  await activityLink.click()
-  await expect(page).toHaveURL(new RegExp(`/activites\\?date=${historicalDate}`))
+  const todayLink = isMobile
+    ? page.locator('.mobile-nav').getByRole('link', { name: 'Jour' })
+    : page.locator('.desktop-nav').getByRole('link', { name: 'Aujourd’hui' })
+  await todayLink.click()
+  await page.getByLabel('Renseigner les pas hors course').click()
+  await expect(page).toHaveURL(new RegExp(`/aujourdhui\\?date=${historicalDate}`))
+  await expect(page.getByRole('dialog', { name: 'Pas hors course' })).toBeVisible()
   await expect(page.getByLabel('Choisir la date du journal')).toHaveValue(historicalDate)
 })
 
@@ -445,6 +528,7 @@ test('les aides contextuelles expliquent les calculs au clic et au clavier', asy
   await expect(page).toHaveURL(/\/aujourdhui$/)
 
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByRole('button', { name: 'Aide : Impact sur la semaine' }).click()
   await expect(page.getByRole('tooltip').filter({ hasText: 'modifie le cumul calorique' })).toBeVisible()
 
@@ -456,6 +540,7 @@ test('les aides contextuelles expliquent les calculs au clic et au clavier', asy
 test('les formulaires restent utilisables sur mobile', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Scénario réservé à la vue téléphone')
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('3000')
   await expect(page.getByRole('button', { name: /Enregistrer 3.?000 kcal/ })).toBeVisible()
   await page.goto('/activites')
@@ -466,6 +551,7 @@ test('les formulaires restent utilisables sur mobile', async ({ page, isMobile }
 test('les grandes valeurs nutritionnelles ne se chevauchent pas sur téléphone', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Scénario réservé à la vue téléphone')
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('3250')
   await expect(page.getByText('kcal consommées', { exact: false })).toBeVisible()
 

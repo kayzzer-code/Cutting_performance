@@ -22,7 +22,7 @@ export function NutritionPage() {
   const [mealName, setMealName] = useState('')
   const [mealCalories, setMealCalories] = useState(0)
   const [editingMealId, setEditingMealId] = useState<string | null>(null)
-  const [mode, setMode] = useState<'quick' | 'detailed'>('quick')
+  const [mode, setMode] = useState<'quick' | 'detailed'>('detailed')
   const [saved, setSaved] = useState(false)
   const weekLogs = weekDates(selectedDate).map((date) => journalLogForDate(state, date))
   const weeklyMargin = calculateWeeklyMargin(weekLogs, state.profile, state.settings)
@@ -89,8 +89,8 @@ export function NutritionPage() {
         <button className="nutrition-mobile-scan" type="button" onClick={openFoodScanner}><ScanBarcode /><span><strong>Scanner un aliment</strong><small>La caméra s’ouvre immédiatement</small></span></button>
 
         <nav className="nutrition-mode-tabs" aria-label="Mode de saisie nutritionnelle">
-          <button type="button" className={mode === 'quick' ? 'active' : ''} aria-pressed={mode === 'quick'} onClick={() => setMode('quick')}><ListChecks /> Saisie rapide</button>
           <button type="button" className={mode === 'detailed' ? 'active' : ''} aria-pressed={mode === 'detailed'} onClick={() => setMode('detailed')}><ScanBarcode /> Aliments & macros</button>
+          <button type="button" className={mode === 'quick' ? 'active' : ''} aria-pressed={mode === 'quick'} onClick={() => setMode('quick')}><ListChecks /> Saisie rapide</button>
         </nav>
 
         {mode === 'quick' ? <section className="nutrition-main-grid">

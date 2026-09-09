@@ -1,5 +1,6 @@
 import { addDays, isoDate } from './dates'
-import type { AppState, CalculationSettings, DailyLog, TrainingTemplate } from './types'
+import { goalFromProfile } from './objectives'
+import type { AppState, CalculationSettings, DailyLog, Profile, TrainingTemplate } from './types'
 
 const upperA: TrainingTemplate = {
   id: 'upper-a',
@@ -102,20 +103,25 @@ export function createInitialState(today = isoDate()): AppState {
     logs[date] = { ...emptyLog(date), ...defaultPlanForTemplate(schedule[date] ?? 'rest') }
   }
 
+  const profile: Profile = {
+    firstName: 'Thomas',
+    experienceYears: 8,
+    trainingLevel: 'advanced',
+    heightCm: 176,
+    referenceWeightKg: 90,
+    currentWeightKg: 90,
+    targetWeightKg: 80,
+    bodyFatPercent: 24,
+    weeklyLossTargetKg: 0.8,
+  }
+  const initialGoal = goalFromProfile(profile, undefined, today)
+
   return {
     schemaVersion: 2,
     onboardingComplete: false,
-    profile: {
-      firstName: 'Thomas',
-      experienceYears: 8,
-      trainingLevel: 'advanced',
-      heightCm: 176,
-      referenceWeightKg: 90,
-      currentWeightKg: 90,
-      targetWeightKg: 80,
-      bodyFatPercent: 24,
-      weeklyLossTargetKg: 0.8,
-    },
+    profile,
+    goals: [initialGoal],
+    activeGoalId: initialGoal.id,
     settings: {
       calculationVersion: '2026.1',
       baseCalories: 3100,

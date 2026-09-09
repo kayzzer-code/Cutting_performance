@@ -159,6 +159,37 @@ export interface Profile {
   weeklyLossTargetKg: number
 }
 
+export type GoalType = 'fat-loss' | 'lean-gain' | 'maintenance' | 'strength' | 'endurance' | 'event'
+export type GoalStatus = 'active' | 'completed' | 'cancelled'
+export type GoalPriority = 'body-composition' | 'strength' | 'cardio' | 'explosiveness' | 'event'
+export type EnduranceDiscipline = 'general' | 'running' | 'cycling' | 'triathlon' | 'ironman'
+
+export interface FitnessGoal {
+  id: string
+  name: string
+  type: GoalType
+  status: GoalStatus
+  startDate: string
+  targetDate?: string
+  endedAt?: string
+  createdAt: string
+  referenceWeightKg: number
+  targetWeightKg: number
+  referenceBodyFatPercent: number
+  targetBodyFatPercent?: number
+  maxBodyFatIncreasePercent?: number
+  heightCm: number
+  trainingLevel: Profile['trainingLevel']
+  /** Signed weekly change: negative for a loss, positive for a gain. */
+  targetWeightChangeKgPerWeek: number
+  priorities: GoalPriority[]
+  enduranceDiscipline?: EnduranceDiscipline
+  eventName?: string
+  strengthExercise?: string
+  strengthTargetKg?: number
+  objectiveNote?: string
+}
+
 export interface CalculationSettings {
   calculationVersion: string
   baseCalories: number
@@ -199,6 +230,8 @@ export interface AppState {
   schemaVersion: number
   onboardingComplete: boolean
   profile: Profile
+  goals: FitnessGoal[]
+  activeGoalId?: string
   settings: CalculationSettings
   logs: Record<string, DailyLog>
   templates: TrainingTemplate[]

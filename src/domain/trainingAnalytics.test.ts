@@ -29,7 +29,7 @@ describe('catalogue et migration v5', () => {
     state.templates[0].exercises.find(exercise => exercise.id === 'cable-fly')!.name = 'Écarté poulie préféré'
     const migrated = migrateState(state)
     const enriched = migrated.catalogue?.find(exercise => exercise.id === 'cable-fly')
-    expect(migrated.schemaVersion).toBe(5)
+    expect(migrated.schemaVersion).toBe(6)
     expect(enriched?.name).toBe('Écarté poulie préféré')
     expect(enriched?.muscleContributions?.[0]).toMatchObject({ muscleId: 'chest', coefficient: 1 })
     expect(migrated.catalogue?.length).toBeGreaterThan(60)

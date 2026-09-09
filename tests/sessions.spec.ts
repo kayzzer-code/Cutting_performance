@@ -45,6 +45,7 @@ test('un brouillon prévient avant navigation et un formulaire vide ne sauvegard
 test('aperçu planning, annulation, confirmation et conservation des saisies', async ({ page }) => {
   const date = await page.getByLabel('Choisir la date du journal').inputValue()
   await page.goto('/nutrition')
+  await page.getByRole('button', { name: 'Saisie rapide', exact: true }).click()
   await page.getByLabel('Calories consommées aujourd’hui').fill('2800')
   await page.getByRole('button', { name: /Enregistrer 2.?800 kcal/ }).click()
   await page.goto('/seances/planning')

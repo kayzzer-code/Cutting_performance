@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Dumbbell, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
 import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, matrixClimbMillStepRate } from '../domain/calculations'
 import { formatLongDate } from '../domain/dates'
@@ -11,10 +12,15 @@ import { ExplainedLabel } from '../components/HelpTooltip'
 import { dayLabels, elapsed, templateForDate, typeOfTemplate } from '../domain/training'
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+const extraActivityTypes: ActivityType[] = ['jump-rope', 'rowing', 'elliptical', 'stair-climber', 'other']
 
 export function ActivitiesPage() {
   const { state, updateLog } = useApp()
   const { selectedDate } = useJournalDate()
+  const [searchParams] = useSearchParams()
+  const requestedFocus = searchParams.get('focus')
+  const requestedType = searchParams.get('type')
+  const requestedExtraType = extraActivityTypes.includes(requestedType as ActivityType) ? requestedType as ActivityType : 'jump-rope'
   const log = useMemo<DailyLog>(() => journalLogForDate(state, selectedDate), [selectedDate, state])
   const savedCalc = calculateDay(log, state.profile, state.settings)
   const plannedTemplate = templateForDate(state, selectedDate)
@@ -41,8 +47,8 @@ export function ActivitiesPage() {
   const [runDistance, setRunDistance] = useState(existingRun?.distanceKm ?? 0)
   const [bikeMinutes, setBikeMinutes] = useState(existingBike?.durationMin ?? 0)
   const [bikeWatts, setBikeWatts] = useState(existingBike?.averageWatts ?? 0)
-  const [extraOpen, setExtraOpen] = useState(false)
-  const [extraType, setExtraType] = useState<ActivityType>('jump-rope')
+  const [extraOpen, setExtraOpen] = useState(requestedFocus === 'extra')
+  const [extraType, setExtraType] = useState<ActivityType>(requestedExtraType)
   const [extraMinutes, setExtraMinutes] = useState(0)
   const [stairSeconds, setStairSeconds] = useState(0)
   const [stairLevel, setStairLevel] = useState(10)
@@ -99,6 +105,24 @@ export function ActivitiesPage() {
   const bikeKcal = previewBike ? Math.round(estimateOtherCardioKcal(previewBike, weightKg)) : 0
   const extraKcal = previewExtra ? Math.round(estimateOtherCardioKcal(previewExtra, weightKg)) : 0
 
+  useEffect(() => {
+    const focusIds: Record<string, string> = {
+      strength: 'activity-strength',
+      steps: 'activity-steps',
+      running: 'activity-running',
+      cycling: 'activity-cycling',
+      extra: 'activity-extra',
+    }
+    const targetId = requestedFocus ? focusIds[requestedFocus] : undefined
+    if (!targetId) return
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [extraOpen, requestedFocus])
+
   function saveActivities(event: FormEvent) {
     event.preventDefault()
     const activities = previewLog.activities.map((activity) => ({ ...activity, id: activity.id.startsWith('preview-') ? makeId(activity.type) : activity.id }))
@@ -117,7 +141,7 @@ export function ActivitiesPage() {
       <form className="reference-body activities-layout-reference" onSubmit={saveActivities}>
         <div className="activity-form-column">
           {saved && <div className="save-toast">Activités enregistrées et cible recalculée.</div>}
-          <section className="activity-entry-card reference-card strength-entry-card">
+          <section id="activity-strength" className={`activity-entry-card reference-card strength-entry-card ${requestedFocus === 'strength' ? 'activity-focused' : ''}`}>
             <span className="entry-icon navy"><Dumbbell /></span>
             <div className="entry-content">
               <div className="strength-entry-heading">
@@ -148,12 +172,12 @@ export function ActivitiesPage() {
               <p className="strength-calculation-note">Le type de journée calorique est ajusté selon la séance réelle. Durée, exercices et séries restent des données de suivi : aucun tonnage n’est transformé arbitrairement en calories.</p>
             </div>
           </section>
-          <section className="activity-entry-card reference-card compact-entry">
+          <section id="activity-steps" className={`activity-entry-card reference-card compact-entry ${requestedFocus === 'steps' ? 'activity-focused' : ''}`}>
             <span className="entry-icon teal"><SportShoe /></span>
             <div className="entry-content"><h2><ExplainedLabel help="Renseigne uniquement les pas de marche et de déplacement. Les pas produits pendant une course sont estimés séparément." placement="left">Marche et déplacements</ExplainedLabel></h2><label><ExplainedLabel help="Ces pas sont valorisés avec le coefficient de marche intégré et comparés à l’objectif de pas du jour." placement="left">Pas hors course</ExplainedLabel><span className="unit-input"><input aria-label="Pas hors course" placeholder="À renseigner" type="number" inputMode="numeric" min="0" step="100" value={walkingSteps ?? ''} onChange={(event) => setWalkingSteps(event.target.value === '' ? null : Number(event.target.value))} /><small>pas</small></span></label></div>
           </section>
 
-          <section className="activity-entry-card reference-card">
+          <section id="activity-running" className={`activity-entry-card reference-card ${requestedFocus === 'running' ? 'activity-focused' : ''}`}>
             <span className="entry-icon blue"><Footprints /></span>
             <div className="entry-content"><h2><ExplainedLabel help="La course est calculée à partir de la distance et de ton poids. Ses pas estimés sont retirés du total pour ne pas compter deux fois la même activité." placement="left">Course à pied</ExplainedLabel></h2><div className="run-fields">
               <label><ExplainedLabel help="Temps total réellement couru pour cette date." placement="left">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée de course" placeholder="0" type="number" inputMode="numeric" min="0" value={runMinutes || ''} onChange={(event) => setRunMinutes(Number(event.target.value))} /><small>min</small></span></label>
@@ -163,7 +187,7 @@ export function ActivitiesPage() {
             </div></div>
           </section>
 
-          <section className="activity-entry-card reference-card bike-entry-card">
+          <section id="activity-cycling" className={`activity-entry-card reference-card bike-entry-card ${requestedFocus === 'cycling' ? 'activity-focused' : ''}`}>
             <span className="entry-icon teal"><Bike /></span>
             <div className="entry-content"><h2><ExplainedLabel help="Le vélo est estimé automatiquement à partir de la durée, des watts moyens réellement affichés par le vélo et de ton poids du jour." placement="left">Vélo</ExplainedLabel></h2><div className="bike-fields power-bike-fields">
               <label><ExplainedLabel help="Temps total passé à pédaler pour cette activité.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée vélo" placeholder="0" type="number" inputMode="numeric" min="0" value={bikeMinutes || ''} onChange={(event) => setBikeMinutes(Number(event.target.value))} /><small>min</small></span></label>
@@ -172,9 +196,9 @@ export function ActivitiesPage() {
             </div></div>
           </section>
 
-          <button className="outline-wide-action" type="button" onClick={() => setExtraOpen((value) => !value)}><Plus /> Ajouter un autre cardio</button>
+          <button id="activity-extra-trigger" className="outline-wide-action" type="button" onClick={() => setExtraOpen((value) => !value)}><Plus /> Ajouter un autre cardio</button>
           <div className="secondary-activity-actions three-actions"><button type="button" onClick={() => { setExtraType('jump-rope'); setExtraOpen(true) }}><Cable /> Corde à sauter</button><button type="button" onClick={() => { setExtraType('stair-climber'); setExtraOpen(true) }}><ChartNoAxesColumnIncreasing /> Escalier</button><button type="button" onClick={() => { setExtraType('other'); setExtraOpen(true) }}><CircleEllipsis /> Autre activité</button></div>
-          {extraOpen && <section className={`extra-cardio reference-card ${extraType === 'stair-climber' ? 'stair-cardio' : 'generic-extra-cardio'}`}>
+          {extraOpen && <section id="activity-extra" className={`extra-cardio reference-card ${extraType === 'stair-climber' ? 'stair-cardio' : 'generic-extra-cardio'} ${requestedFocus === 'extra' ? 'activity-focused' : ''}`}>
             <label className="extra-type-picker"><ExplainedLabel help="Choisis le cardio que tu as réellement effectué. L’escalier utilise le profil de niveaux Matrix ClimbMill." placement="left">Type de cardio</ExplainedLabel><select aria-label="Type de cardio supplémentaire" value={extraType} onChange={(event) => setExtraType(event.target.value as ActivityType)}><option value="jump-rope">Corde à sauter</option><option value="rowing">Rameur</option><option value="elliptical">Elliptique</option><option value="stair-climber">Escalier / Stairmaster (Matrix)</option><option value="other">Autre</option></select></label>
             {extraType === 'stair-climber' ? <>
               <label><ExplainedLabel help="Partie entière de la durée affichée par la machine.">Minutes</ExplainedLabel><span className="unit-input"><input aria-label="Minutes escalier" type="number" inputMode="numeric" min="0" max="300" step="1" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>

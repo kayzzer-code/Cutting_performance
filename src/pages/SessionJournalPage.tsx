@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type KeyboardE
 import { Link, useSearchParams } from 'react-router-dom'
 import { Activity, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Flame, Pencil, Pause, Play, Plus, Shuffle, TimerReset, Trash2 } from 'lucide-react'
 import { useApp } from '../state/AppContext'
+import { useCloudSync } from '../state/CloudSyncContext'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { addDays, formatLongDate, isoDate, startOfWeek } from '../domain/dates'
 import { blankSet, changeSession, conventionLabels, elapsed, exerciseHistory, newLine, replaceExercise, startSession, targetText, templateForDate, trainingLog, uid, validSet, workSets } from '../domain/training'
@@ -23,6 +24,7 @@ const percentDelta = (value: number | null, previous: number | null) => previous
 
 export function SessionJournalPage() {
   const { state, transact, storageStatus } = useApp()
+  const cloud = useCloudSync()
   const { selectedDate: date } = useJournalDate()
   const [params] = useSearchParams()
   const [now, setNow] = useState(() => Date.now())
@@ -199,7 +201,7 @@ export function SessionJournalPage() {
           <div className="journal-mobile-nav"><Button variant="secondary" disabled={currentIndex === 0} onClick={() => setActive(lines[currentIndex - 1]?.id)}><ChevronLeft /> Précédent</Button><Button variant="secondary" disabled={currentIndex === lines.length - 1} onClick={() => setActive(lines[currentIndex + 1]?.id)}>Exercice suivant <ChevronRight /></Button></div>
           {!readOnly && session.status !== 'completed' && <RestPanel session={session} restMs={restMs} restSeconds={currentLine?.restSeconds ?? 90} update={update} />}
           {correcting && session.status === 'completed' && <Button onClick={() => { setCorrecting(false); setMessage('Correction conservée dans la séance d’origine.') }}>Terminer la correction</Button>}
-          <p className="session-hint">{storageStatus} · Données uniquement sur cet appareil.</p>
+          <p className="session-hint">{cloud.status === 'local' ? `${storageStatus} · Données uniquement sur cet appareil.` : cloud.label}</p>
         </main>
         <aside className="journal-live-rail" aria-label="Statistiques en direct">
           <Card className="journal-live-card"><header><div><span className="eyebrow">EN DIRECT</span><h2>Ta séance</h2></div><Activity /></header><div className="journal-kpis"><div><span>Séries</span><strong>{liveSummary?.workingSets ?? 0}</strong></div><div><span>Répétitions</span><strong>{liveSummary?.repetitions ?? 0}</strong></div><div><span>Tonnage</span><strong>{liveSummary?.tonnage === null ? '—' : formatNumber(liveSummary?.tonnage ?? 0)}<small> kg</small></strong></div><div><span>Durée</span><strong>{duration(liveSummary?.durationMs ?? 0)}</strong></div></div></Card>
