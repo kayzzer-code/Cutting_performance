@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarDays, CheckCircle2, ClipboardList, Clock3, Crosshair, Info, Target, TrendingUp } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ClipboardList, Clock3, Crosshair, Dumbbell, Info, Target, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { calculateDay, calculateWeeklyMargin } from '../domain/calculations'
@@ -8,10 +8,11 @@ import { useApp } from '../state/AppContext'
 import { formatDecimal, formatNumber } from '../domain/format'
 import { useJournalDate } from '../hooks/useJournalDate'
 import { journalLogForDate } from '../domain/journal'
+import type { AppState } from '../domain/types'
 import { ExplainedLabel } from '../components/HelpTooltip'
 
 export function WeekPage() {
-  const { state, setWeeklyStrategy, updateLog } = useApp()
+  const { state, setWeeklyStrategy, updateLog, updateSchedule } = useApp()
   const [allocationApplied, setAllocationApplied] = useState(false)
   const { selectedDate } = useJournalDate()
   const currentDate = isoDate()
@@ -56,6 +57,7 @@ export function WeekPage() {
 
         <section className="week-matrix-card reference-card">
           <div className="week-matrix-row week-days"><span />{rows.map((row) => <strong key={row.date}>{formatDayName(row.date).slice(0, 3)} {new Date(`${row.date}T12:00:00`).getDate()}</strong>)}</div>
+          <MatrixRow icon={<Dumbbell />} label="Séance prévue" help="Séance de musculation initialement programmée pour chaque journée. Clique sur une cellule pour choisir un autre modèle ou un jour de repos ; la cible calorique et les pas prévus sont recalculés immédiatement.">{rows.map((row) => <PlannedSessionSelect key={row.date} date={row.date} state={state} onChange={(templateId) => updateSchedule(row.date, templateId)} />)}</MatrixRow>
           <MatrixRow icon={<Target />} label="Cible" help="Cible calorique de chaque jour après prise en compte des activités. Clique sur une valeur pour voir son calcul détaillé dans Aujourd’hui.">{rows.map((row) => <WeekValueLink key={row.date} date={row.date} currentDate={currentDate} destination="/aujourdhui" label={`Voir le détail de la cible du ${formatLongDate(row.date).toLocaleLowerCase('fr-FR')}`}>{formatNumber(row.calc.adjustedCalorieTarget)}</WeekValueLink>)}</MatrixRow>
           <MatrixRow icon={<ClipboardList />} label="Réel" help="Calories effectivement enregistrées pour chaque journée. Clique sur une valeur ou un tiret pour ouvrir la saisie Nutrition de ce jour.">{rows.map((row) => <WeekValueLink key={row.date} date={row.date} currentDate={currentDate} destination="/nutrition" label={`${row.log.caloriesConsumed === undefined ? 'Saisir' : 'Voir'} les calories réelles du ${formatLongDate(row.date).toLocaleLowerCase('fr-FR')}`} className={row.log.caloriesConsumed !== undefined && row.log.caloriesConsumed <= row.calc.adjustedCalorieTarget ? 'teal-text' : row.log.caloriesConsumed !== undefined ? 'orange-text' : ''}>{row.log.caloriesConsumed === undefined ? '—' : formatNumber(row.log.caloriesConsumed)}</WeekValueLink>)}</MatrixRow>
           <MatrixRow icon={<TrendingUp />} label="Écart" help="Calories réelles moins cible : positif signifie un dépassement, négatif signifie une marge.">{rows.map((row) => <span key={row.date} className={row.gap === undefined ? '' : row.gap <= 0 ? 'teal-text' : 'orange-text'}>{row.gap === undefined ? '—' : `${row.gap > 0 ? '+' : '−'}${formatNumber(Math.abs(row.gap))}`}</span>)}</MatrixRow>
@@ -80,6 +82,22 @@ function WeekKpi({ icon, label, value, unit, signed, decimals, tone, help, place
 
 function MatrixRow({ icon, label, help, children }: { icon: React.ReactNode; label: string; help: string; children: React.ReactNode }) {
   return <div className="week-matrix-row"><strong>{icon}<ExplainedLabel help={help} placement="left">{label}</ExplainedLabel></strong>{children}</div>
+}
+
+function PlannedSessionSelect({ date, state, onChange }: { date: string; state: AppState; onChange: (templateId: string) => void }) {
+  const templateId = state.schedule[date] ?? 'rest'
+  const plannedSnapshot = state.plannedSessions?.[date]?.template
+  const options = state.templates.filter((template) => !template.archived || template.id === templateId)
+  const missingTemplate = templateId !== 'rest' && !options.some((template) => template.id === templateId) ? plannedSnapshot : undefined
+
+  return <label className="week-session-cell" title={`Modifier la séance programmée du ${formatLongDate(date).toLocaleLowerCase('fr-FR')}`}>
+    <span className="sr-only">Séance programmée du {date}</span>
+    <select aria-label={`Séance programmée du ${date}`} value={templateId} onChange={(event) => onChange(event.target.value)}>
+      <option value="rest">Repos</option>
+      {options.map((template) => <option key={template.id} value={template.id}>{template.shortName}</option>)}
+      {missingTemplate && <option value={missingTemplate.id}>{missingTemplate.shortName} (archivée)</option>}
+    </select>
+  </label>
 }
 
 function WeekValueLink({ date, currentDate, destination, label, className = '', children }: { date: string; currentDate: string; destination: string; label: string; className?: string; children: React.ReactNode }) {

@@ -293,10 +293,11 @@ export async function saveCloudState(client: SupabaseClient, userId: string, sta
       default_rest_seconds: item.defaultRestSeconds ?? null, favourite: item.favourite ?? false, archived: item.archived ?? false, sync_token: syncToken,
     })), 'user_id,local_id')
 
+    const fallbackTemplateCreatedAt = `${state.goals[0]?.createdAt ?? new Date().toISOString().slice(0, 10)}T00:00:00.000Z`
     const templateRows = state.templates.map(template => ({
       user_id: userId, local_id: template.id, name: template.name, short_name: template.shortName, description: template.description ?? null,
       day_type: template.dayType ?? 'upper', template_version: template.version ?? 1, archived: template.archived ?? false, sync_token: syncToken,
-      created_at: template.createdAt ?? undefined,
+      created_at: template.createdAt ?? fallbackTemplateCreatedAt,
     }))
     const savedTemplates = await upsertRows(client, 'training_templates', templateRows, 'user_id,local_id')
     const templateIds = new Map(savedTemplates.map(row => [String(row.local_id), Number(row.id)]))

@@ -282,6 +282,7 @@ test('le scanner global ajoute rapidement un aliment à la date active sur tél�
   await page.goto('/activites')
   await page.locator('.global-scan-button').click()
   await expect(page.getByRole('dialog', { name: 'Scanner un produit' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Photo nette' })).toBeVisible()
   await page.getByRole('button', { name: 'Saisir le code manuellement' }).click()
   await page.getByLabel('Code-barres du produit').fill('3560070973570')
   await page.getByRole('button', { name: 'Rechercher le produit' }).click()
@@ -416,6 +417,25 @@ test('les valeurs de la semaine ouvrent le détail du bon jour', async ({ page }
   await expect(page.getByRole('button', { name: 'Aliments & macros' })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Saisie rapide' }).click()
   await expect(page.getByLabel('Calories consommées aujourd’hui')).toBeVisible()
+})
+
+test('la semaine affiche et permet de modifier la séance programmée', async ({ page }) => {
+  await page.goto('/semaine')
+  const currentDate = await page.getByLabel('Choisir la date du journal').inputValue()
+  const sessionSelect = page.getByLabel(`Séance programmée du ${currentDate}`)
+  const currentTemplate = await sessionSelect.inputValue()
+  const nextTemplate = currentTemplate === 'rest' ? 'upper-a' : 'rest'
+  const date = new Date(`${currentDate}T12:00:00`)
+  const longDate = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(date)
+  const target = page.getByRole('link', { name: `Voir le détail de la cible du ${longDate}` })
+  const previousTarget = await target.textContent()
+
+  await sessionSelect.selectOption(nextTemplate)
+  await expect(sessionSelect).toHaveValue(nextTemplate)
+  await expect(target).not.toHaveText(previousTarget ?? '')
+
+  await page.reload()
+  await expect(page.getByLabel(`Séance programmée du ${currentDate}`)).toHaveValue(nextTemplate)
 })
 
 test('l’objectif recalcule le plan et les coefficients techniques restent verrouillés', async ({ page }) => {
