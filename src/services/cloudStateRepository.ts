@@ -143,7 +143,8 @@ export async function loadCloudState(client: SupabaseClient, userId: string): Pr
     log.activities.push({
       id: String(row.local_id), date: log.date, type: row.type as AppState['logs'][string]['activities'][number]['type'], durationMin: Number(row.duration_min),
       distanceKm: numberOrUndefined(row.distance_km), met: numberOrUndefined(row.met), averageWatts: numberOrUndefined(row.average_watts),
-      level: numberOrUndefined(row.level), stepRateSpm: numberOrUndefined(row.step_rate_spm), note: row.note ? String(row.note) : undefined,
+      level: numberOrUndefined(row.level), stepRateSpm: numberOrUndefined(row.step_rate_spm), speedKmh: numberOrUndefined(row.speed_kmh),
+      inclinePercent: numberOrUndefined(row.incline_percent), note: row.note ? String(row.note) : undefined,
     })
   }
   for (const row of tables.meals) {
@@ -318,7 +319,8 @@ export async function saveCloudState(client: SupabaseClient, userId: string, sta
       return dailyLogId ? log.activities.map(activity => ({
         user_id: userId, daily_log_id: dailyLogId, local_id: activity.id, type: activity.type, duration_min: activity.durationMin,
         distance_km: activity.distanceKm ?? null, met: activity.met ?? null, average_watts: activity.averageWatts ?? null, level: activity.level ?? null,
-        step_rate_spm: activity.stepRateSpm ?? null, note: activity.note ?? null, sync_token: syncToken,
+        step_rate_spm: activity.stepRateSpm ?? null, speed_kmh: activity.speedKmh ?? null, incline_percent: activity.inclinePercent ?? null,
+        note: activity.note ?? null, sync_token: syncToken,
       })) : []
     }), 'user_id,local_id')
     await upsertRows(client, 'meals', Object.values(state.logs).flatMap(log => {

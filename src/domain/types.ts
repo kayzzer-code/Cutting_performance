@@ -5,6 +5,7 @@ export type ActivityType =
   | 'rowing'
   | 'elliptical'
   | 'stair-climber'
+  | 'incline-treadmill'
   | 'other'
 
 export interface Activity {
@@ -17,6 +18,8 @@ export interface Activity {
   averageWatts?: number
   level?: number
   stepRateSpm?: number
+  speedKmh?: number
+  inclinePercent?: number
   note?: string
 }
 

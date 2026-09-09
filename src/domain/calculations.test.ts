@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateDay, calculateWeeklyMargin, matrixClimbMillStepRate, rollingAverage, suggestedCalorieAdjustment } from './calculations'
+import { calculateDay, calculateWeeklyMargin, inclineTreadmillMet, matrixClimbMillStepRate, rollingAverage, suggestedCalorieAdjustment } from './calculations'
 import { adaptSettingsToProfile, estimatedBmr, targetDailyDeficit } from './planning'
 import { createInitialState } from './seed'
 import type { DailyLog } from './types'
@@ -69,6 +69,16 @@ describe('moteur de calcul calorique', () => {
       activities: [{ id: 'stairs', date: '2026-08-27', type: 'stair-climber', durationMin: 6.5, level: 10, stepRateSpm: 78 }],
     }, state.profile, state.settings)
     expect(result.otherCardioKcal).toBe(87)
+    expect(result.walkingSteps).toBe(18_000)
+  })
+
+  it('calcule la marche inclinée avec la vitesse, la pente, le poids et la durée', () => {
+    const result = calculateDay({
+      date: '2026-08-27', totalSteps: 18_000, meals: [], weightKg: 90,
+      activities: [{ id: 'incline-walk', date: '2026-08-27', type: 'incline-treadmill', durationMin: 30, speedKmh: 5, inclinePercent: 10 }],
+    }, state.profile, state.settings)
+    expect(inclineTreadmillMet(5, 10)).toBeCloseTo(7.67, 1)
+    expect(result.otherCardioKcal).toBe(315)
     expect(result.walkingSteps).toBe(18_000)
   })
 

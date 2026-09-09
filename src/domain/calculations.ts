@@ -49,8 +49,28 @@ export function estimateOtherCardioKcal(activity: Activity, weightKg: number): n
     return verticalWorkJoules / (4184 * assumedEfficiency)
   }
 
+  if (activity.type === 'incline-treadmill') {
+    const speedKmh = activity.speedKmh ?? 0
+    const inclinePercent = activity.inclinePercent ?? 0
+    if (speedKmh <= 0 || inclinePercent < 0) return 0
+    // ACSM walking equation: VO2 = 3.5 + 0.1S + 1.8SG (S in m/min, G as a decimal).
+    // We subtract the resting 3.5 mL/kg/min because the app reintegrates net activity energy.
+    const netVo2 = Math.max(0, inclineTreadmillVo2(speedKmh, inclinePercent) - 3.5)
+    return netVo2 * weightKg / 1000 * 5 * durationMin
+  }
+
   const met = activity.met ?? DEFAULT_MET[activity.type] ?? 5
   return Math.max(0, met - 1) * weightKg * (durationMin / 60)
+}
+
+export function inclineTreadmillVo2(speedKmh: number, inclinePercent: number): number {
+  const speedMetresPerMinute = Math.max(0, speedKmh) * 1000 / 60
+  const grade = Math.max(0, inclinePercent) / 100
+  return 3.5 + 0.1 * speedMetresPerMinute + 1.8 * speedMetresPerMinute * grade
+}
+
+export function inclineTreadmillMet(speedKmh: number, inclinePercent: number): number {
+  return inclineTreadmillVo2(speedKmh, inclinePercent) / 3.5
 }
 
 export function roundTo(value: number, step: number): number {
@@ -196,6 +216,7 @@ export function activityLabel(type: string): string {
     rowing: 'Rameur',
     elliptical: 'Elliptique',
     'stair-climber': 'Escalier / Stairmaster',
+    'incline-treadmill': 'Marche inclinée',
     other: 'Autre cardio',
   }[type] ?? type
 }

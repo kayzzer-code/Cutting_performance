@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Dumbbell, Footprints, Info, Plus, Save, SportShoe } from 'lucide-react'
-import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, matrixClimbMillStepRate } from '../domain/calculations'
+import { Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Dumbbell, Footprints, Info, Mountain, Plus, Save, SportShoe } from 'lucide-react'
+import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, inclineTreadmillMet, matrixClimbMillStepRate } from '../domain/calculations'
 import { formatLongDate } from '../domain/dates'
 import type { Activity, ActivityType, DailyLog, StrengthActivity } from '../domain/types'
 import { useApp } from '../state/AppContext'
@@ -12,7 +12,7 @@ import { ExplainedLabel } from '../components/HelpTooltip'
 import { dayLabels, elapsed, templateForDate, typeOfTemplate } from '../domain/training'
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-const extraActivityTypes: ActivityType[] = ['jump-rope', 'rowing', 'elliptical', 'stair-climber', 'other']
+const extraActivityTypes: ActivityType[] = ['jump-rope', 'rowing', 'elliptical', 'stair-climber', 'incline-treadmill', 'other']
 
 export function ActivitiesPage() {
   const { state, updateLog } = useApp()
@@ -52,6 +52,8 @@ export function ActivitiesPage() {
   const [extraMinutes, setExtraMinutes] = useState(0)
   const [stairSeconds, setStairSeconds] = useState(0)
   const [stairLevel, setStairLevel] = useState(10)
+  const [treadmillSpeed, setTreadmillSpeed] = useState(5)
+  const [treadmillIncline, setTreadmillIncline] = useState(10)
   const [saved, setSaved] = useState(false)
   const pace = runDistance > 0 ? runMinutes / runDistance : 0
   const legacyBikeMet = existingBike?.averageWatts === undefined ? existingBike?.met : undefined
@@ -94,11 +96,13 @@ export function ActivitiesPage() {
     })
     if (extraDurationMin > 0) activities.push(extraType === 'stair-climber'
       ? { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, level: stairLevel, stepRateSpm: stairStepRate }
-      : { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, met: activityDefaultMet(extraType) })
+      : extraType === 'incline-treadmill'
+        ? { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, speedKmh: treadmillSpeed, inclinePercent: treadmillIncline }
+        : { id: 'preview-extra', date: selectedDate, type: extraType, durationMin: extraDurationMin, met: activityDefaultMet(extraType) })
     const shell = { ...log, activities, strengthActivity, totalSteps: 0 }
     const runningSteps = estimateRunningSteps(shell, state.settings.runCadenceSpm)
     return { ...shell, totalSteps: walkingSteps === null ? undefined : walkingSteps + runningSteps }
-  }, [bikeMinutes, bikeWatts, extraDurationMin, extraType, legacyBikeMet, log, runDistance, runMinutes, selectedDate, stairLevel, stairStepRate, state.settings.runCadenceSpm, strengthActivity, walkingSteps])
+  }, [bikeMinutes, bikeWatts, extraDurationMin, extraType, legacyBikeMet, log, runDistance, runMinutes, selectedDate, stairLevel, stairStepRate, state.settings.runCadenceSpm, strengthActivity, treadmillIncline, treadmillSpeed, walkingSteps])
   const preview = calculateDay(previewLog, state.profile, state.settings)
   const previewBike = previewLog.activities.find((activity) => activity.id === 'preview-bike')
   const previewExtra = previewLog.activities.find((activity) => activity.id === 'preview-extra')
@@ -197,9 +201,9 @@ export function ActivitiesPage() {
           </section>
 
           <button id="activity-extra-trigger" className="outline-wide-action" type="button" onClick={() => setExtraOpen((value) => !value)}><Plus /> Ajouter un autre cardio</button>
-          <div className="secondary-activity-actions three-actions"><button type="button" onClick={() => { setExtraType('jump-rope'); setExtraOpen(true) }}><Cable /> Corde à sauter</button><button type="button" onClick={() => { setExtraType('stair-climber'); setExtraOpen(true) }}><ChartNoAxesColumnIncreasing /> Escalier</button><button type="button" onClick={() => { setExtraType('other'); setExtraOpen(true) }}><CircleEllipsis /> Autre activité</button></div>
-          {extraOpen && <section id="activity-extra" className={`extra-cardio reference-card ${extraType === 'stair-climber' ? 'stair-cardio' : 'generic-extra-cardio'} ${requestedFocus === 'extra' ? 'activity-focused' : ''}`}>
-            <label className="extra-type-picker"><ExplainedLabel help="Choisis le cardio que tu as réellement effectué. L’escalier utilise le profil de niveaux Matrix ClimbMill." placement="left">Type de cardio</ExplainedLabel><select aria-label="Type de cardio supplémentaire" value={extraType} onChange={(event) => setExtraType(event.target.value as ActivityType)}><option value="jump-rope">Corde à sauter</option><option value="rowing">Rameur</option><option value="elliptical">Elliptique</option><option value="stair-climber">Escalier / Stairmaster (Matrix)</option><option value="other">Autre</option></select></label>
+          <div className="secondary-activity-actions four-actions"><button type="button" onClick={() => { setExtraType('jump-rope'); setExtraOpen(true) }}><Cable /> Corde à sauter</button><button type="button" onClick={() => { setExtraType('stair-climber'); setExtraOpen(true) }}><ChartNoAxesColumnIncreasing /> Escalier</button><button type="button" onClick={() => { setExtraType('incline-treadmill'); setExtraOpen(true) }}><Mountain /> Marche inclinée</button><button type="button" onClick={() => { setExtraType('other'); setExtraOpen(true) }}><CircleEllipsis /> Autre activité</button></div>
+          {extraOpen && <section id="activity-extra" className={`extra-cardio reference-card ${extraType === 'stair-climber' ? 'stair-cardio' : extraType === 'incline-treadmill' ? 'treadmill-cardio' : 'generic-extra-cardio'} ${requestedFocus === 'extra' ? 'activity-focused' : ''}`}>
+            <label className="extra-type-picker"><ExplainedLabel help="Choisis le cardio réellement effectué. L’escalier utilise le profil Matrix et la marche inclinée l’équation ACSM." placement="left">Type de cardio</ExplainedLabel><select aria-label="Type de cardio supplémentaire" value={extraType} onChange={(event) => setExtraType(event.target.value as ActivityType)}><option value="jump-rope">Corde à sauter</option><option value="rowing">Rameur</option><option value="elliptical">Elliptique</option><option value="stair-climber">Escalier / Stairmaster (Matrix)</option><option value="incline-treadmill">Marche inclinée sur tapis</option><option value="other">Autre</option></select></label>
             {extraType === 'stair-climber' ? <>
               <label><ExplainedLabel help="Partie entière de la durée affichée par la machine.">Minutes</ExplainedLabel><span className="unit-input"><input aria-label="Minutes escalier" type="number" inputMode="numeric" min="0" max="300" step="1" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>
               <label><ExplainedLabel help="Secondes restantes, entre 0 et 59. Exemple : 6 min 30 s.">Secondes</ExplainedLabel><span className="unit-input"><input aria-label="Secondes escalier" type="number" inputMode="numeric" min="0" max="59" step="1" value={stairSeconds || ''} onChange={(event) => setStairSeconds(Number(event.target.value))} /><small>s</small></span></label>
@@ -207,12 +211,19 @@ export function ActivitiesPage() {
               <label><ExplainedLabel help="Cadence déduite du tableau officiel Matrix. Elle est mémorisée avec l’activité afin de garder un calcul historique stable.">Cadence calculée</ExplainedLabel><span className="readonly-field">{formatNumber(stairStepRate)} <small>marches/min</small></span></label>
               <label><ExplainedLabel help="Estimation fondée sur ton poids, la cadence Matrix, une marche de 20,3 cm et un rendement mécanique de 25 %. Se tenir fortement aux poignées peut surestimer la dépense." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(extraKcal)} <small>kcal</small></span></label>
               <div className="reference-info stair-method-note"><Info /> Profil Matrix / Basic-Fit : le niveau 10 vaut 78 marches/min. Les marches de la machine ne sont pas ajoutées à tes pas de marche quotidiens.</div>
+            </> : extraType === 'incline-treadmill' ? <>
+              <label><ExplainedLabel help="Temps total passé à marcher sur le tapis incliné.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée marche inclinée" type="number" inputMode="decimal" min="0" max="600" step="0.5" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>
+              <label><ExplainedLabel help="Vitesse moyenne affichée par le tapis, jusqu’à 6 km/h pour rester dans le domaine de l’équation de marche ACSM.">Vitesse</ExplainedLabel><span className="unit-input"><input aria-label="Vitesse marche inclinée" type="number" inputMode="decimal" min="0.1" max="6" step="0.1" required value={treadmillSpeed || ''} onChange={(event) => setTreadmillSpeed(Number(event.target.value))} /><small>km/h</small></span></label>
+              <label><ExplainedLabel help="Pourcentage de pente affiché par le tapis. Par exemple, saisis 10 pour une inclinaison de 10 %.">Inclinaison</ExplainedLabel><span className="unit-input"><input aria-label="Inclinaison marche inclinée" type="number" inputMode="decimal" min="0" max="40" step="0.5" required value={treadmillIncline || ''} onChange={(event) => setTreadmillIncline(Number(event.target.value))} /><small>%</small></span></label>
+              <label><ExplainedLabel help="Intensité calculée par l’équation de marche ACSM à partir de la vitesse et de la pente.">Intensité calculée</ExplainedLabel><span className="readonly-field">{formatDecimal(inclineTreadmillMet(treadmillSpeed, treadmillIncline), 1)} <small>MET</small></span></label>
+              <label><ExplainedLabel help="Estimation nette au-dessus du repos avec l’équation de marche ACSM, ton poids du jour et la durée." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(extraKcal)} <small>kcal</small></span></label>
+              <div className="reference-info treadmill-method-note"><Info /> Ne reporte pas les pas du tapis dans « Pas hors course » : cette séance est déjà calculée à partir de sa durée, sa vitesse et sa pente.</div>
             </> : <>
               <label><ExplainedLabel help="Temps total consacré à ce cardio.">Durée</ExplainedLabel><span className="unit-input"><input aria-label="Durée cardio supplémentaire" type="number" inputMode="decimal" min="0" max="600" step="0.5" value={extraMinutes || ''} onChange={(event) => setExtraMinutes(Number(event.target.value))} /><small>min</small></span></label>
               <label><ExplainedLabel help="Estimation nette au-dessus du repos à partir de la durée, du poids et de la valeur MET associée à l’activité." placement="right">Dépense estimée</ExplainedLabel><span className="readonly-field">{formatNumber(extraKcal)} <small>kcal</small></span></label>
             </>}
           </section>}
-          <div className="reference-info"><Info /> Les kilomètres de course remplacent leurs pas estimés afin d’éviter le double comptage. Les marches du Stairmaster restent, elles, un cardio hors pas.</div>
+          <div className="reference-info"><Info /> Les kilomètres de course remplacent leurs pas estimés. Le Stairmaster et la marche inclinée sont calculés séparément : ne les ajoute pas aussi aux pas de marche.</div>
         </div>
 
         <aside className="activity-live-summary reference-card">

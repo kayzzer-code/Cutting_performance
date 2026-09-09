@@ -25,12 +25,14 @@ export function migrateState(input: unknown): AppState {
   for (const [date, log] of Object.entries(input.logs)) {
     assert(isIsoDate(date) && record(log) && log.date === date && Array.isArray(log.activities) && Array.isArray(log.meals), 'journée')
     for (const activity of log.activities) {
-      assert(record(activity) && typeof activity.id === 'string' && ['running', 'cycling', 'jump-rope', 'rowing', 'elliptical', 'stair-climber', 'other'].includes(String(activity.type)), 'activité')
+      assert(record(activity) && typeof activity.id === 'string' && ['running', 'cycling', 'jump-rope', 'rowing', 'elliptical', 'stair-climber', 'incline-treadmill', 'other'].includes(String(activity.type)), 'activité')
       assert(typeof activity.durationMin === 'number' && Number.isFinite(activity.durationMin) && activity.durationMin >= 0, 'durée d’activité')
-      for (const field of ['distanceKm', 'met', 'averageWatts', 'level', 'stepRateSpm']) assert(activity[field] === undefined || typeof activity[field] === 'number' && Number.isFinite(activity[field]), `activité ${field}`)
+      for (const field of ['distanceKm', 'met', 'averageWatts', 'level', 'stepRateSpm', 'speedKmh', 'inclinePercent']) assert(activity[field] === undefined || typeof activity[field] === 'number' && Number.isFinite(activity[field]), `activité ${field}`)
       assert(activity.averageWatts === undefined || typeof activity.averageWatts === 'number' && activity.averageWatts > 0 && activity.averageWatts <= 3000, 'watts moyens vélo')
       assert(activity.level === undefined || typeof activity.level === 'number' && Number.isInteger(activity.level) && activity.level >= 1 && activity.level <= 25, 'niveau escalier')
       assert(activity.stepRateSpm === undefined || typeof activity.stepRateSpm === 'number' && activity.stepRateSpm > 0 && activity.stepRateSpm <= 300, 'cadence escalier')
+      assert(activity.speedKmh === undefined || typeof activity.speedKmh === 'number' && activity.speedKmh > 0 && activity.speedKmh <= 12, 'vitesse marche inclinée')
+      assert(activity.inclinePercent === undefined || typeof activity.inclinePercent === 'number' && activity.inclinePercent >= 0 && activity.inclinePercent <= 40, 'inclinaison tapis')
     }
     for (const meal of log.meals) {
       assert(record(meal) && typeof meal.id === 'string' && typeof meal.name === 'string' && typeof meal.calories === 'number' && Number.isFinite(meal.calories) && meal.calories >= 0, 'repas')

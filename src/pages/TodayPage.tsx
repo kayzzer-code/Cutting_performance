@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { BicepsFlexed, Bike, Cable, ChartNoAxesColumnIncreasing, CircleEllipsis, Crosshair, Footprints, Orbit, Plus, SportShoe, Utensils, Waves, X } from 'lucide-react'
+import { BicepsFlexed, Bike, Cable, ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight, CircleEllipsis, Crosshair, Footprints, Mountain, Orbit, Plus, SportShoe, Utensils, Waves, X } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { calculateDay, calculateWeeklyMargin, rollingAverage } from '../domain/calculations'
+import { activityLabel, calculateDay, calculateWeeklyMargin, estimateOtherCardioKcal, rollingAverage } from '../domain/calculations'
 import { formatDayName, weekDates } from '../domain/dates'
 import { useApp } from '../state/AppContext'
 import { formatDecimal, formatNumber } from '../domain/format'
@@ -11,12 +11,14 @@ import { journalLogForDate } from '../domain/journal'
 import { ExplainedLabel } from '../components/HelpTooltip'
 import { dayLabels, templateForDate } from '../domain/training'
 import { QuickActivityEditor, type QuickActivityEditorType } from '../components/QuickActivityEditor'
+import type { ActivityType } from '../domain/types'
 
 export function TodayPage() {
   const { state } = useApp()
   const { selectedDate, dateHref } = useJournalDate()
   const [cardioPickerOpen, setCardioPickerOpen] = useState(false)
   const [activityEditor, setActivityEditor] = useState<QuickActivityEditorType | null>(null)
+  const [cardioIndex, setCardioIndex] = useState(0)
   const log = journalLogForDate(state, selectedDate)
   const calc = calculateDay(log, state.profile, state.settings)
   const weekLogs = weekDates(selectedDate).map((date) => journalLogForDate(state, date))
@@ -47,6 +49,11 @@ export function TodayPage() {
   const bikeAverageWatts = bikePowerMinutes > 0
     ? Math.round(bikes.reduce((sum, activity) => sum + (activity.averageWatts ?? 0) * activity.durationMin, 0) / bikePowerMinutes)
     : undefined
+  const extraCardioTypes = [...new Set(log.activities
+    .filter((activity) => !['running', 'cycling'].includes(activity.type))
+    .map((activity) => activity.type))]
+  const cardioCards: Array<ActivityType | 'add-cardio'> = ['running', 'cycling', ...extraCardioTypes, 'add-cardio']
+  const safeCardioIndex = Math.min(cardioIndex, cardioCards.length - 1)
   const nutritionPercent = Math.min(100, calc.adjustedCalorieTarget ? consumed / calc.adjustedCalorieTarget * 100 : 0)
   const marginPosition = Math.min(100, Math.max(0, (weeklyMargin + 1500) / 3000 * 100))
   const weights = rollingAverage(Object.values(state.logs)
@@ -69,9 +76,22 @@ export function TodayPage() {
           <div className="daily-summary-card day-activity-grid reference-card">
             <Link to={sessionHref} className="daily-summary-item" aria-label={`${actualSessionLabel} — ouvrir la séance`}><span className="hero-icon-circle navy"><BicepsFlexed /></span><ExplainedLabel help={sessionWasChanged ? `Le planning prévoyait ${template?.shortName ?? dayLabels[log.strengthActivity!.plannedDayType]}, mais ${actualSessionLabel} a été déclaré comme réalité. Clique pour modifier cette déclaration.` : template ? `Tu dois réaliser ta séance ${template.shortName} de musculation pour cette journée. Clique sur le bloc pour ouvrir le journal de séance et la démarrer.` : 'Aucune séance de musculation n’est planifiée. Clique pour déclarer une séance imprévue.'} placement="left">Séance :</ExplainedLabel><strong>{actualSessionLabel}</strong></Link>
             <button type="button" className="daily-summary-item steps-summary-item" aria-label="Renseigner les pas hors course" onClick={() => setActivityEditor('steps')}><span className="hero-icon-circle teal"><SportShoe /></span><ExplainedLabel help="Nombre de pas de marche et de déplacement comparé à l’objectif de la journée, sans les pas estimés pendant la course afin d’éviter le double comptage.">Pas hors course :</ExplainedLabel><strong className="steps-summary-value"><b>{formatNumber(log.totalSteps === undefined ? 0 : calc.walkingSteps)}</b><small>/ {formatNumber(calc.targetSteps)}</small></strong><span className="activity-target-caption">réalisés / cible</span></button>
-            <button type="button" className="daily-summary-item" aria-label="Renseigner une course" onClick={() => setActivityEditor('running')}><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong></button>
-            <button type="button" className="daily-summary-item" aria-label="Renseigner une sortie vélo" onClick={() => setActivityEditor('cycling')}><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée et puissance moyenne enregistrées. Les watts, le poids et la durée déterminent l’estimation de dépense." placement="right">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${formatDuration(bikeMinutes)}${bikeAverageWatts ? ` • ${bikeAverageWatts} W` : ''}` : 'Non renseigné'}</strong></button>
-            <button type="button" className="daily-summary-item add-cardio-item" aria-label="Ajouter un autre cardio" onClick={() => setCardioPickerOpen(true)}><span className="hero-icon-circle blue"><Plus /></span><span>Autre cardio</span><strong>Ajouter</strong></button>
+            <button type="button" className="cardio-carousel-arrow previous" aria-label="Cardio précédent" onClick={() => moveCardio(-1)}><ChevronLeft /></button>
+            <div className="today-cardio-viewport" aria-live="polite">
+              <div className="today-cardio-track" style={{ transform: `translateX(-${safeCardioIndex * 100}%)` }}>
+                <button type="button" className="daily-summary-item cardio-kpi-card" aria-label="Renseigner une course" onClick={() => setActivityEditor('running')}><span className="hero-icon-circle blue"><Footprints /></span><ExplainedLabel help="Récapitulatif de la durée et de la distance courues. La dépense est estimée à partir de la distance et de ton poids.">Course :</ExplainedLabel><strong>{runMinutes ? `${formatDuration(runMinutes)} • ${formatDecimal(runDistance)} km` : 'Non renseigné'}</strong>{runMinutes > 0 && <span className="activity-target-caption">{formatNumber(calc.runningKcal)} kcal estimées</span>}</button>
+                <button type="button" className="daily-summary-item cardio-kpi-card" aria-label="Renseigner une sortie vélo" onClick={() => setActivityEditor('cycling')}><span className="hero-icon-circle teal"><Bike /></span><ExplainedLabel help="Durée et puissance moyenne enregistrées. Les watts, le poids et la durée déterminent l’estimation de dépense.">Vélo :</ExplainedLabel><strong>{bikeMinutes ? `${formatDuration(bikeMinutes)}${bikeAverageWatts ? ` • ${bikeAverageWatts} W` : ''}` : 'Non renseigné'}</strong>{bikeMinutes > 0 && <span className="activity-target-caption">{formatNumber(bikes.reduce((sum, activity) => sum + estimateOtherCardioKcal(activity, log.weightKg ?? state.profile.currentWeightKg), 0))} kcal estimées</span>}</button>
+                {extraCardioTypes.map((type) => {
+                  const activities = log.activities.filter((activity) => activity.type === type)
+                  const duration = activities.reduce((sum, activity) => sum + activity.durationMin, 0)
+                  const kcal = Math.round(activities.reduce((sum, activity) => sum + estimateOtherCardioKcal(activity, log.weightKg ?? state.profile.currentWeightKg), 0))
+                  return <button key={type} type="button" className="daily-summary-item cardio-kpi-card" aria-label={`Modifier ${activityLabel(type)}`} onClick={() => setActivityEditor(type)}><span className={`hero-icon-circle ${cardioTone(type)}`}>{cardioIcon(type)}</span><ExplainedLabel help="Cardio supplémentaire enregistré pour cette date. Clique sur la carte pour modifier ses paramètres.">{activityLabel(type)} :</ExplainedLabel><strong>{activitySummary(type, activities[0], duration)}</strong><span className="activity-target-caption">{formatNumber(kcal)} kcal estimées</span></button>
+                })}
+                <button type="button" className="daily-summary-item add-cardio-item cardio-kpi-card" aria-label="Ajouter un autre cardio" onClick={() => setCardioPickerOpen(true)}><span className="hero-icon-circle blue"><Plus /></span><span>Autre cardio</span><strong>Ajouter</strong><span className="activity-target-caption">Choisir une activité</span></button>
+              </div>
+              <span className="cardio-carousel-position">{safeCardioIndex + 1} / {cardioCards.length}</span>
+            </div>
+            <button type="button" className="cardio-carousel-arrow next" aria-label="Cardio suivant" onClick={() => moveCardio(1)}><ChevronRight /></button>
           </div>
         </section>
 
@@ -129,19 +149,32 @@ export function TodayPage() {
           <div className="day-cardio-choices">
             <CardioChoice onClick={() => openActivityEditor('jump-rope')} icon={<Cable />} title="Corde à sauter" description="Durée et dépense estimée" tone="teal" />
             <CardioChoice onClick={() => openActivityEditor('stair-climber')} icon={<ChartNoAxesColumnIncreasing />} title="StairMaster" description="Durée, niveau et cadence" tone="blue" />
+            <CardioChoice onClick={() => openActivityEditor('incline-treadmill')} icon={<Mountain />} title="Marche inclinée" description="Durée, vitesse et inclinaison" tone="teal" />
             <CardioChoice onClick={() => openActivityEditor('rowing')} icon={<Waves />} title="Rameur" description="Durée du cardio" tone="navy" />
             <CardioChoice onClick={() => openActivityEditor('elliptical')} icon={<Orbit />} title="Elliptique" description="Durée du cardio" tone="teal" />
             <CardioChoice onClick={() => openActivityEditor('other')} icon={<CircleEllipsis />} title="Autre cardio" description="Une activité libre" tone="blue" />
           </div>
         </section>
       </div>}
-      {activityEditor && <QuickActivityEditor key={activityEditor} date={selectedDate} type={activityEditor} onClose={() => setActivityEditor(null)} />}
+      {activityEditor && <QuickActivityEditor key={activityEditor} date={selectedDate} type={activityEditor} onClose={closeActivityEditor} />}
     </div>
   )
 
   function openActivityEditor(type: QuickActivityEditorType) {
     setCardioPickerOpen(false)
     setActivityEditor(type)
+  }
+
+  function closeActivityEditor() {
+    if (activityEditor && activityEditor !== 'steps') {
+      const index = cardioCards.indexOf(activityEditor)
+      if (index >= 0) setCardioIndex(index)
+    }
+    setActivityEditor(null)
+  }
+
+  function moveCardio(direction: -1 | 1) {
+    setCardioIndex((index) => (Math.min(index, cardioCards.length - 1) + direction + cardioCards.length) % cardioCards.length)
   }
 }
 
@@ -162,4 +195,32 @@ function formatDuration(minutes: number): string {
   const rest = minutes % 60
   if (!hours) return `${rest} min`
   return `${hours} h${rest ? ` ${String(rest).padStart(2, '0')}` : ''}`
+}
+
+function activitySummary(type: ActivityType, activity: { speedKmh?: number; inclinePercent?: number; level?: number }, duration: number): string {
+  const durationLabel = formatPreciseDuration(duration)
+  if (type === 'incline-treadmill') return `${durationLabel} • ${formatDecimal(activity.speedKmh ?? 0)} km/h • ${formatDecimal(activity.inclinePercent ?? 0)} %`
+  if (type === 'stair-climber') return `${durationLabel}${activity.level ? ` • niv. ${activity.level}` : ''}`
+  return durationLabel
+}
+
+function formatPreciseDuration(minutes: number): string {
+  const totalSeconds = Math.round(minutes * 60)
+  const hours = Math.floor(totalSeconds / 3600)
+  const remainingMinutes = Math.floor(totalSeconds % 3600 / 60)
+  const seconds = totalSeconds % 60
+  if (hours) return `${hours} h${remainingMinutes ? ` ${String(remainingMinutes).padStart(2, '0')}` : ''}`
+  return `${remainingMinutes} min${seconds ? ` ${seconds} s` : ''}`
+}
+
+function cardioIcon(type: ActivityType): ReactNode {
+  return {
+    'jump-rope': <Cable />, rowing: <Waves />, elliptical: <Orbit />,
+    'stair-climber': <ChartNoAxesColumnIncreasing />, 'incline-treadmill': <Mountain />,
+    other: <CircleEllipsis />, running: <Footprints />, cycling: <Bike />,
+  }[type]
+}
+
+function cardioTone(type: ActivityType): string {
+  return ['running', 'stair-climber', 'other'].includes(type) ? 'blue' : type === 'rowing' ? 'navy' : 'teal'
 }

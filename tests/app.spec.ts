@@ -66,6 +66,7 @@ test('Jour centralise la saisie des activités et masque l’ancien onglet Activ
   await expect(page.getByLabel('Renseigner une course')).toContainText('1 h • 10,0 km')
   await expect(page.getByLabel('Renseigner les pas hors course')).toContainText('20 000')
 
+  await page.getByLabel('Cardio suivant').click()
   await page.getByLabel('Renseigner une sortie vélo').click()
   const bikeDialog = page.getByRole('dialog', { name: 'Vélo' })
   await bikeDialog.getByLabel('Durée vélo').fill('45')
@@ -74,7 +75,7 @@ test('Jour centralise la saisie des activités et masque l’ancien onglet Activ
   await bikeDialog.getByRole('button', { name: 'Fermer la saisie d’activité' }).click()
   await expect(page.getByLabel('Renseigner une sortie vélo')).toContainText('45 min • 180 W')
 
-  await page.getByLabel('Ajouter un autre cardio').first().click()
+  await page.locator('.today-actions').getByRole('button', { name: 'Ajouter un autre cardio' }).click()
   await expect(page.getByRole('dialog', { name: 'Quel cardio as-tu fait ?' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Corde à sauter/ })).toBeVisible()
   await page.getByRole('button', { name: /StairMaster/ }).click()
@@ -86,6 +87,34 @@ test('Jour centralise la saisie des activités et masque l’ancien onglet Activ
   expect(activities.find((activity: { type: string }) => activity.type === 'running')).toMatchObject({ durationMin: 60, distanceKm: 10 })
   expect(activities.find((activity: { type: string }) => activity.type === 'cycling')).toMatchObject({ durationMin: 45, averageWatts: 180 })
   expect(activities.find((activity: { type: string }) => activity.type === 'stair-climber')).toMatchObject({ durationMin: 6.5, level: 10 })
+})
+
+test('la marche inclinée est calculée puis apparaît comme KPI navigable', async ({ page }) => {
+  await page.goto('/aujourdhui')
+  await page.locator('.today-actions').getByRole('button', { name: 'Ajouter un autre cardio' }).click()
+  await page.getByRole('button', { name: /Marche inclinée/ }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Marche inclinée' })
+  await dialog.getByLabel('Durée').fill('30')
+  await dialog.getByLabel('Vitesse du tapis').fill('5')
+  await dialog.getByLabel('Inclinaison du tapis').fill('10')
+  await expect(dialog).toContainText('7,7 MET')
+  await expect(dialog).toContainText('315 kcal')
+  await expect(dialog).toContainText('Enregistré automatiquement')
+  await dialog.getByRole('button', { name: 'Fermer la saisie d’activité' }).click()
+
+  const treadmillCard = page.getByLabel('Modifier Marche inclinée')
+  await expect(treadmillCard).toBeVisible()
+  await expect(treadmillCard).toContainText('30 min • 5,0 km/h • 10,0 %')
+  await expect(treadmillCard).toContainText('315 kcal estimées')
+  await page.getByLabel('Cardio précédent').click()
+  await expect(page.getByLabel('Renseigner une sortie vélo')).toBeVisible()
+  await page.getByLabel('Cardio suivant').click()
+  await expect(treadmillCard).toBeVisible()
+
+  const selectedDate = await page.getByLabel('Choisir la date du journal').inputValue()
+  const treadmill = await page.evaluate((date) => JSON.parse(localStorage.getItem('cutting-performance-app:v1')!).logs[date].activities.find((activity: { type: string }) => activity.type === 'incline-treadmill'), selectedDate)
+  expect(treadmill).toMatchObject({ durationMin: 30, speedKmh: 5, inclinePercent: 10 })
 })
 
 test('une activité ajuste la cible, évite le double comptage et persiste', async ({ page }) => {

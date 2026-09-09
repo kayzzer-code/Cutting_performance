@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Bike, Cable, ChartNoAxesColumnIncreasing, Check, CircleEllipsis, Footprints, Gauge, Orbit, SportShoe, Waves, X } from 'lucide-react'
-import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, matrixClimbMillStepRate } from '../domain/calculations'
-import { formatNumber } from '../domain/format'
+import { Bike, Cable, ChartNoAxesColumnIncreasing, Check, CircleEllipsis, Footprints, Gauge, Mountain, Orbit, SportShoe, Waves, X } from 'lucide-react'
+import { activityDefaultMet, calculateDay, estimateOtherCardioKcal, estimateRunningSteps, inclineTreadmillMet, matrixClimbMillStepRate } from '../domain/calculations'
+import { formatDecimal, formatNumber } from '../domain/format'
 import { journalLogForDate } from '../domain/journal'
 import { uid } from '../domain/training'
 import type { Activity, ActivityType } from '../domain/types'
@@ -23,6 +23,7 @@ const activityMeta: Record<QuickActivityEditorType, { title: string; subtitle: s
   rowing: { title: 'Rameur', subtitle: 'Durée du cardio', icon: <Waves />, tone: 'navy' },
   elliptical: { title: 'Elliptique', subtitle: 'Durée du cardio', icon: <Orbit />, tone: 'teal' },
   'stair-climber': { title: 'StairMaster', subtitle: 'Durée et niveau Matrix', icon: <ChartNoAxesColumnIncreasing />, tone: 'blue' },
+  'incline-treadmill': { title: 'Marche inclinée', subtitle: 'Durée, vitesse et inclinaison du tapis', icon: <Mountain />, tone: 'teal' },
   other: { title: 'Autre cardio', subtitle: 'Durée de l’activité', icon: <CircleEllipsis />, tone: 'blue' },
 }
 
@@ -52,6 +53,8 @@ export function QuickActivityEditor({ date, type, onClose }: QuickActivityEditor
   const [extraMinutes, setExtraMinutes] = useState(Math.floor(initialExtraMinutes))
   const [stairSeconds, setStairSeconds] = useState(type === 'stair-climber' ? Math.round((initialExtraMinutes % 1) * 60) : 0)
   const [stairLevel, setStairLevel] = useState(existingExtra?.level ?? 10)
+  const [treadmillSpeed, setTreadmillSpeed] = useState(existingExtra?.speedKmh ?? 5)
+  const [treadmillIncline, setTreadmillIncline] = useState(existingExtra?.inclinePercent ?? 10)
   const [saveState, setSaveState] = useState<'saved' | 'error'>('saved')
   const noticeTimer = useRef<number | undefined>(undefined)
   const [activityId] = useState(() => type === 'running' ? runs[0]?.id ?? uid('activity')
@@ -141,8 +144,23 @@ export function QuickActivityEditor({ date, type, onClose }: QuickActivityEditor
     const durationMin = type === 'stair-climber' ? safeMinutes + safeSeconds / 60 : safeMinutes
     saveActivity(type, durationMin > 0 ? type === 'stair-climber' ? {
       id: activityId, date, type, durationMin, level: safeLevel, stepRateSpm: matrixClimbMillStepRate(safeLevel),
+    } : type === 'incline-treadmill' ? {
+      id: activityId, date, type, durationMin, speedKmh: treadmillSpeed, inclinePercent: treadmillIncline,
     } : {
       id: activityId, date, type, durationMin, met: existingExtra?.met ?? activityDefaultMet(type),
+    } : null)
+  }
+
+  function changeInclineTreadmill(minutes: number, speedKmh: number, inclinePercent: number) {
+    if (type !== 'incline-treadmill') return
+    const safeMinutes = Math.min(600, Math.max(0, minutes))
+    const safeSpeed = Math.min(6, Math.max(0, speedKmh))
+    const safeIncline = Math.min(40, Math.max(0, inclinePercent))
+    setExtraMinutes(safeMinutes)
+    setTreadmillSpeed(safeSpeed)
+    setTreadmillIncline(safeIncline)
+    saveActivity(type, safeMinutes > 0 && safeSpeed > 0 ? {
+      id: activityId, date, type, durationMin: safeMinutes, speedKmh: safeSpeed, inclinePercent: safeIncline,
     } : null)
   }
 
@@ -150,7 +168,7 @@ export function QuickActivityEditor({ date, type, onClose }: QuickActivityEditor
   const runPace = runDistance > 0 && runMinutes > 0 ? runMinutes / runDistance : 0
   const runKcal = Math.round(runDistance * (log.weightKg ?? state.profile.currentWeightKg) * state.settings.runKcalPerKgKm)
   const runSteps = Math.round(runMinutes * state.settings.runCadenceSpm)
-  const transientCardio = makeTransientCardio(type, date, activityId, bikeMinutes, bikeWatts, extraMinutes, stairSeconds, stairLevel, existingExtra?.met)
+  const transientCardio = makeTransientCardio(type, date, activityId, bikeMinutes, bikeWatts, extraMinutes, stairSeconds, stairLevel, treadmillSpeed, treadmillIncline, existingExtra?.met)
   const cardioKcal = transientCardio ? Math.round(estimateOtherCardioKcal(transientCardio, log.weightKg ?? state.profile.currentWeightKg)) : 0
 
   return <div className="quick-activity-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
@@ -191,15 +209,19 @@ export function QuickActivityEditor({ date, type, onClose }: QuickActivityEditor
       </>}
 
       {!['steps', 'running', 'cycling'].includes(type) && <>
-        <div className={`quick-activity-fields ${type === 'stair-climber' ? 'three-columns' : ''}`}>
-          <QuickField label="Durée" unit="min" value={extraMinutes} step="1" autoFocus onChange={(value) => changeExtra(value)} />
+        <div className={`quick-activity-fields ${type === 'stair-climber' || type === 'incline-treadmill' ? 'three-columns' : ''}`}>
+          <QuickField label="Durée" unit="min" value={extraMinutes} step={type === 'incline-treadmill' ? '0.5' : '1'} autoFocus onChange={(value) => type === 'incline-treadmill' ? changeInclineTreadmill(value, treadmillSpeed, treadmillIncline) : changeExtra(value)} />
           {type === 'stair-climber' && <QuickField label="Secondes" unit="s" value={stairSeconds} step="1" max={59} onChange={(value) => changeExtra(extraMinutes, value)} />}
           {type === 'stair-climber' && <QuickField label="Niveau Matrix" unit="/ 25" value={stairLevel} step="1" min={1} max={25} onChange={(value) => changeExtra(extraMinutes, stairSeconds, value)} />}
+          {type === 'incline-treadmill' && <QuickField label="Vitesse du tapis" unit="km/h" value={treadmillSpeed} step="0.1" min={0.1} max={6} onChange={(value) => changeInclineTreadmill(extraMinutes, value, treadmillIncline)} />}
+          {type === 'incline-treadmill' && <QuickField label="Inclinaison du tapis" unit="%" value={treadmillIncline} step="0.5" max={40} onChange={(value) => changeInclineTreadmill(extraMinutes, treadmillSpeed, value)} />}
         </div>
         <section className="quick-activity-results two-results">
           {type === 'stair-climber' && <QuickResult label="Cadence calculée" value={`${formatNumber(matrixClimbMillStepRate(stairLevel))} marches/min`} />}
+          {type === 'incline-treadmill' && <QuickResult label="Intensité calculée" value={`${formatDecimal(inclineTreadmillMet(treadmillSpeed, treadmillIncline), 1)} MET`} />}
           <QuickResult label="Dépense estimée" value={`${formatNumber(cardioKcal)} kcal`} />
         </section>
+        {type === 'incline-treadmill' && <p className="quick-activity-method-note">Calcul ACSM prévu pour une allure de marche jusqu’à 6 km/h, fondé sur la vitesse, la pente, ton poids et la durée. Pour éviter le double comptage, ne reporte pas les pas du tapis dans « Pas hors course ».</p>}
       </>}
 
       <section className="quick-target-recap"><span><Gauge /> Nouvelle cible calorique</span><strong>{formatNumber(calculation.adjustedCalorieTarget)} <small>kcal</small></strong></section>
@@ -226,10 +248,11 @@ function formatPace(value: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')} / km`
 }
 
-function makeTransientCardio(type: QuickActivityEditorType, date: string, id: string, bikeMinutes: number, bikeWatts: number, extraMinutes: number, stairSeconds: number, stairLevel: number, existingMet?: number): Activity | null {
+function makeTransientCardio(type: QuickActivityEditorType, date: string, id: string, bikeMinutes: number, bikeWatts: number, extraMinutes: number, stairSeconds: number, stairLevel: number, treadmillSpeed: number, treadmillIncline: number, existingMet?: number): Activity | null {
   if (type === 'cycling') return { id, date, type, durationMin: bikeMinutes, averageWatts: bikeWatts > 0 ? bikeWatts : undefined }
   if (type === 'steps' || type === 'running') return null
   const durationMin = type === 'stair-climber' ? extraMinutes + stairSeconds / 60 : extraMinutes
   if (type === 'stair-climber') return { id, date, type, durationMin, level: stairLevel, stepRateSpm: matrixClimbMillStepRate(stairLevel) }
+  if (type === 'incline-treadmill') return { id, date, type, durationMin, speedKmh: treadmillSpeed, inclinePercent: treadmillIncline }
   return { id, date, type, durationMin, met: existingMet ?? activityDefaultMet(type) }
 }
