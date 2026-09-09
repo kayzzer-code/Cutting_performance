@@ -1,13 +1,16 @@
 /* oxlint-disable react/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createInitialState } from '../domain/seed'
-import { BACKUP_KEY, exportLocalData, loadStoredState, migrateState, STORAGE_KEY } from '../domain/storage'
+import { BACKUP_KEY, exportLocalData, loadStoredState, migrateState, RECOVERY_KEY, STORAGE_KEY } from '../domain/storage'
 import { blankSet, changeSession, elapsed, previewSchedule, reconfigureState, startSession, trainingLog, uid } from '../domain/training'
 import type { Activity, AppState, CalculationSettings, DailyLog, Profile, SetLog } from '../domain/types'
+import { useAuth } from './AuthContext'
 
 interface AppContextValue {
   state: AppState
   storageStatus: string
+  storageAvailable: boolean
+  hadStoredState: boolean
   transact: (update: (state: AppState) => AppState) => boolean
   replaceState: (state: AppState, status?: string) => void
   updateProfile: (profile: Partial<Profile>) => void
@@ -31,21 +34,55 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const { configured, user } = useAuth()
   const [loaded] = useState(() => {
-    try { return { ...loadStoredState(localStorage), error: '' } }
-    catch (error) { return { state: null, raw: null, error: String(error) } }
+    let existingRaw: string | null = null
+    try {
+      existingRaw = localStorage.getItem(STORAGE_KEY)
+      return { ...loadStoredState(localStorage), error: '', storageAvailable: true, hadStoredState: existingRaw !== null, recoverableRaw: existingRaw }
+    } catch (error) {
+      // Keep the original value untouched and continue in memory. Once the
+      // user is authenticated, CloudSync can still restore the server copy.
+      if (existingRaw === null) {
+        try { existingRaw = localStorage.getItem(STORAGE_KEY) } catch { /* Storage itself is unavailable. */ }
+      }
+      return {
+        state: migrateState(createInitialState()),
+        raw: null,
+        error: String(error),
+        storageAvailable: false,
+        hadStoredState: existingRaw !== null,
+        recoverableRaw: existingRaw,
+      }
+    }
   })
-  const [state, renderState] = useState<AppState | null>(loaded.state)
+  const [state, renderState] = useState<AppState>(loaded.state)
   const current = useRef(state)
   const lastRaw = useRef(loaded.raw)
+  const storageAvailable = useRef(loaded.storageAvailable)
+  const [isStorageAvailable, setIsStorageAvailable] = useState(loaded.storageAvailable)
+  const recoverableRaw = useRef(loaded.recoverableRaw)
   const unsaved = useRef(false)
-  const [storageStatus, setStorageStatus] = useState('Sauvegardé localement')
+  const cloudAvailable = configured && Boolean(user)
+  const [storageStatus, setStorageStatus] = useState(loaded.storageAvailable ? 'Sauvegardé localement' : cloudAvailable ? 'Copie locale indisponible — synchronisation cloud active' : 'Échec de sauvegarde — données conservées en mémoire')
   const [error, setError] = useState(loaded.error)
   const [conflict, setConflict] = useState(false)
+  const markStorageUnavailable = useCallback((cause: unknown) => {
+    storageAvailable.current = false
+    setIsStorageAvailable(false)
+    setError(String(cause))
+    setStorageStatus(cloudAvailable ? 'Copie locale indisponible — synchronisation cloud active' : 'Échec de sauvegarde — données conservées en mémoire')
+  }, [cloudAvailable])
   const transact = useCallback((update: (value: AppState) => AppState): boolean => {
-    if (!current.current || conflict) return false
+    if (conflict) return false
+    if (storageAvailable.current) {
+      try {
+        if (localStorage.getItem(STORAGE_KEY) !== lastRaw.current) { setConflict(true); setStorageStatus('Conflit entre onglets'); return false }
+      } catch (cause) {
+        markStorageUnavailable(cause)
+      }
+    }
     try {
-      if (localStorage.getItem(STORAGE_KEY) !== lastRaw.current) { setConflict(true); setStorageStatus('Conflit entre onglets'); return false }
       const next = update(current.current)
       if (next === current.current && !unsaved.current) return true
       const versioned = { ...next, revision: (current.current.revision ?? 0) + 1 }
@@ -53,29 +90,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       renderState(versioned)
       unsaved.current = true
       const serialized = JSON.stringify(versioned)
-      localStorage.setItem(STORAGE_KEY, serialized)
-      lastRaw.current = serialized
+      if (storageAvailable.current) {
+        try {
+          localStorage.setItem(STORAGE_KEY, serialized)
+          lastRaw.current = serialized
+        } catch (cause) {
+          markStorageUnavailable(cause)
+        }
+      }
       unsaved.current = false
-      setStorageStatus('Sauvegardé localement'); setError('')
-      return true
+      setStorageStatus(storageAvailable.current ? 'Sauvegardé localement' : cloudAvailable ? 'Copie locale indisponible — synchronisation cloud active' : 'Échec de sauvegarde — données conservées en mémoire')
+      if (storageAvailable.current) setError('')
+      return storageAvailable.current || cloudAvailable
     } catch (cause) { setError(String(cause)); setStorageStatus(unsaved.current ? 'Échec de sauvegarde — données conservées en mémoire' : 'Action non enregistrée'); return false }
-  }, [conflict])
+  }, [cloudAvailable, conflict, markStorageUnavailable])
 
   const replaceState = useCallback((value: AppState, status = 'Données cloud chargées') => {
     const next = migrateState(value)
     const serialized = JSON.stringify(next)
-    localStorage.setItem(STORAGE_KEY, serialized)
+    if (storageAvailable.current || recoverableRaw.current !== null) {
+      try {
+        if (!storageAvailable.current && recoverableRaw.current !== null && !localStorage.getItem(RECOVERY_KEY)) {
+          localStorage.setItem(RECOVERY_KEY, recoverableRaw.current)
+        }
+        localStorage.setItem(STORAGE_KEY, serialized)
+        lastRaw.current = serialized
+        recoverableRaw.current = null
+        storageAvailable.current = true
+        setIsStorageAvailable(true)
+      } catch (cause) {
+        markStorageUnavailable(cause)
+      }
+    }
     current.current = next
-    lastRaw.current = serialized
     unsaved.current = false
     renderState(next)
     setConflict(false)
-    setError('')
-    setStorageStatus(status)
-  }, [])
+    if (storageAvailable.current) setError('')
+    setStorageStatus(storageAvailable.current ? status : `${status} — cache local indisponible`)
+  }, [markStorageUnavailable])
 
   useEffect(() => {
     function changed(event: StorageEvent) {
+      if (!storageAvailable.current) return
       if (event.key !== STORAGE_KEY || event.newValue === lastRaw.current) return
       if (unsaved.current || !event.newValue) { setConflict(true); setStorageStatus('Conflit entre onglets'); return }
       try {
@@ -90,9 +147,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const updateLog = (date: string, patch: Partial<DailyLog>) => { transact(s => ({ ...s, logs: { ...s.logs, [date]: { ...trainingLog(s, date), ...patch } } })) }
-  if (!state) return <main className="storage-recovery"><h1>Ton journal est protégé</h1><p>Le stockage n’a pas pu être ouvert. Aucune donnée existante n’a été effacée.</p><pre>{error}</pre><button onClick={() => exportLocalData(localStorage.getItem(STORAGE_KEY) ?? '')}>Exporter les données brutes</button><button onClick={() => window.location.reload()}>Réessayer</button><p>Une sauvegarde antérieure peut être disponible sous la clé {BACKUP_KEY}.</p></main>
   const value: AppContextValue = {
-    state, transact, replaceState, storageStatus,
+    state, transact, replaceState, storageStatus, storageAvailable: isStorageAvailable, hadStoredState: loaded.hadStoredState,
     updateProfile: patch => { transact(s => ({ ...s, profile: { ...s.profile, ...patch } })) },
     updateSettings: patch => { transact(s => ({ ...s, settings: { ...s.settings, ...patch } })) },
     applyConfiguration: (profile, settings) => { transact(s => {
@@ -124,7 +180,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     resetApp: () => { transact(() => migrateState(createInitialState())) },
   }
   return <AppContext.Provider value={value}>
-    {(error || conflict) && <div className="storage-alert" role="alert"><strong>{conflict ? 'Une autre version du journal existe. Sauvegarde bloquée pour éviter son écrasement.' : storageStatus}</strong><span>{error}</span><button onClick={() => exportLocalData(JSON.stringify(current.current))}>Exporter ma version</button>{!conflict && <button onClick={() => transact(s => s)}>Réessayer la sauvegarde</button>}<button onClick={() => window.location.reload()}>Recharger la version enregistrée</button></div>}
+    {(error || conflict) && <div className="storage-alert" role="alert"><strong>{conflict ? 'Une autre version du journal existe. Sauvegarde bloquée pour éviter son écrasement.' : storageStatus}</strong><span>{error}</span><button onClick={() => exportLocalData(recoverableRaw.current ?? JSON.stringify(current.current), recoverableRaw.current ? 'cutting-performance-donnees-locales-brutes.json' : 'cutting-performance-sauvegarde.json')}>Exporter ma version</button>{isStorageAvailable && !conflict && <button onClick={() => transact(s => s)}>Réessayer la sauvegarde</button>}<button onClick={() => window.location.reload()}>Recharger</button>{!isStorageAvailable && <small>Aucune donnée locale existante n’a été effacée. Une sauvegarde antérieure peut aussi exister sous la clé {BACKUP_KEY}.</small>}</div>}
     {children}
   </AppContext.Provider>
 }

@@ -7,6 +7,7 @@ import type { AppState, ExerciseDefinition, FitnessGoal, TemplateExercise } from
 
 export const STORAGE_KEY = 'cutting-performance-app:v1'
 export const BACKUP_KEY = `${STORAGE_KEY}:backup-before-v6`
+export const RECOVERY_KEY = `${STORAGE_KEY}:recovery-invalid-local`
 const CURRENT_SCHEMA_VERSION = 6
 const legacyTypes = { 'upper-a': 'upper', 'upper-b': 'upper', 'lower-a': 'lower', 'lower-b': 'lower', 'shoulders-arms': 'shoulders-arms' } as const
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)

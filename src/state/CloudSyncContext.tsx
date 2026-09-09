@@ -22,7 +22,7 @@ const CLOUD_USER_KEY = 'cutting-performance-app:cloud-user'
 
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const { configured, user } = useAuth()
-  const { state, replaceState } = useApp()
+  const { state, replaceState, storageAvailable, hadStoredState } = useApp()
   const [status, setStatus] = useState<SyncStatus>(configured ? 'checking' : 'local')
   const [error, setError] = useState('')
   const [cloudInfo, setCloudInfo] = useState<CloudStateInfo | null>(null)
@@ -32,20 +32,28 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const lastLocalRevision = useRef(state.revision ?? 0)
   const syncTimer = useRef<number | undefined>(undefined)
 
+  const readLinkedOwner = useCallback(() => {
+    try { return localStorage.getItem(CLOUD_USER_KEY) } catch { return null }
+  }, [])
+  const rememberLinkedOwner = useCallback((userId: string) => {
+    try { localStorage.setItem(CLOUD_USER_KEY, userId) } catch { /* Cloud remains the source of truth. */ }
+  }, [])
+
   const initialize = useCallback(async (forceChoice = false) => {
     if (!configured || !user) { setStatus(configured ? 'checking' : 'local'); return }
     setStatus('checking'); setError('')
     try {
       const info = await inspectCloudState(requireSupabase(), user.id)
       setCloudInfo(info)
-      const linkedOwner = localStorage.getItem(CLOUD_USER_KEY)
+      const linkedOwner = readLinkedOwner()
       const alreadyLinked = linkedOwner === user.id
       setForeignLocalCache(Boolean(linkedOwner && linkedOwner !== user.id))
-      if (!forceChoice && alreadyLinked && info.exists) {
+      if (!forceChoice && info.exists && (alreadyLinked || !hadStoredState || !storageAvailable)) {
         const remote = await loadCloudState(requireSupabase(), user.id)
         if (remote) {
           lastCloudRevision.current = info.revision
           lastLocalRevision.current = remote.revision ?? info.revision
+          rememberLinkedOwner(user.id)
           replaceState(remote, 'Données cloud chargées')
           setStatus('synced')
           return
@@ -55,7 +63,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause)); setStatus('error')
     }
-  }, [configured, replaceState, user])
+  }, [configured, hadStoredState, readLinkedOwner, rememberLinkedOwner, replaceState, storageAvailable, user])
 
   useEffect(() => {
     if (!configured || !user) {
@@ -77,12 +85,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const result = await saveCloudState(requireSupabase(), user.id, state, 'local-import', cloudInfo?.exists ? cloudInfo.revision : undefined)
       lastCloudRevision.current = result.revision
       lastLocalRevision.current = result.revision
-      localStorage.setItem(CLOUD_USER_KEY, user.id)
+      rememberLinkedOwner(user.id)
       replaceState({ ...state, revision: result.revision }, 'Import cloud vérifié')
       setCloudInfo({ exists: true, revision: result.revision, updatedAt: result.syncedAt })
       setStatus('synced')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setStatus('error') }
-  }, [cloudInfo, replaceState, state, user])
+  }, [cloudInfo, rememberLinkedOwner, replaceState, state, user])
 
   const loadCloud = useCallback(async () => {
     if (!user) return
@@ -92,11 +100,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       if (!remote) throw new Error('Aucune donnée cloud n’a été trouvée pour ce compte.')
       lastCloudRevision.current = remote.revision ?? cloudInfo?.revision ?? 0
       lastLocalRevision.current = remote.revision ?? 0
-      localStorage.setItem(CLOUD_USER_KEY, user.id)
+      rememberLinkedOwner(user.id)
       replaceState(remote, 'Données cloud chargées')
       setStatus('synced')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setStatus('error') }
-  }, [cloudInfo, replaceState, user])
+  }, [cloudInfo, rememberLinkedOwner, replaceState, user])
 
   const startFresh = useCallback(async () => {
     if (!user) return
@@ -106,11 +114,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const result = await saveCloudState(requireSupabase(), user.id, fresh, 'local-import', cloudInfo?.exists ? cloudInfo.revision : undefined)
       const next = { ...fresh, revision: result.revision }
       lastCloudRevision.current = result.revision; lastLocalRevision.current = result.revision
-      localStorage.setItem(CLOUD_USER_KEY, user.id)
+      rememberLinkedOwner(user.id)
       replaceState(next, 'Nouveau journal cloud créé')
       setStatus('synced')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setStatus('error') }
-  }, [cloudInfo, replaceState, user])
+  }, [cloudInfo, rememberLinkedOwner, replaceState, user])
 
   useEffect(() => {
     if (!configured || !user || status !== 'synced') return
